@@ -72,13 +72,40 @@ Gränser: starter 0-2 s tidiga (backtracking tar med uppkastet, bra),
 slut 2-4 s sena (spelaren joggar ut ur bilden, aktiviteten faller
 långsamt). TennisCuts recensioner klagar på det motsatta.
 
+### Körning 4: bollspår
+
+36 klipp, 31 av 43 poäng fick spår över tröskeln. Stickprov i ett långt
+rally: tre av fyra spår rimliga bollbanor, **ett följde spelarens rygg**
+(hackig L-form). Två orsaker:
+
+1. Närspelaren nära kameran är större än max-arean, kastades i grovpasset
+   och fick därför ingen exkluderingsbox i bollpasset. Hans kropp blev
+   bollkandidater.
+2. Confidence vägde längd och täckning lika tungt som jämnhet. En kedja
+   längs en kropp är lång och tät.
+
+Ändring: grovpasset behåller blobbar upp till 50 % av bilden (bara
+`select_players` begränsar spelare till 6 %), exkluderingsboxar för alla
+blobbar över bortre-golvet, confidence = 0.25 längd + 0.55 jämnhet + 0.20
+täckning, tröskel 0.65.
+
+Efter: rallyt 201-224 s ger 131 punkter, residual 0.16 px, varje slag en
+ren parabel över nätet. Ett spår i 111-113 s visade sig vara bollen som
+studsar ut längs sidlinjen efter poängen, tre studsar synliga. Riktigt,
+men inte spel.
+
+![Bollkedjor i ett rally](img/ball_chains_real.jpg)
+
 ### Kvar att verifiera
 
-- Bollspår på riktig film (körning 4, pågår).
 - Ett komplett facit. Ljud-rallyn är en andra åsikt, inte sanning.
 - Serve-etiketten: `serve_onset` bygger på stillhet före segmentet, men
   studsarna före serven ger nu aktivitet. Troligen behöver den räknas
   från första slaget istället.
+- Segmentens slut ligger 2-4 s sena. Kandidat: sluta vid sista slaget +
+  1.5 s när ljud finns.
+- Bollspår vid bortre baslinjen: bollen är ~3 px där, troligen inget spår.
+  Acceptabelt.
 
 ## Film 2: GlL6XyTbhLA (TennisCut-promo, 1:25)
 

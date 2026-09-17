@@ -220,13 +220,20 @@ def _track_balls(info, coarse, court, signal, tracks, highlights, cfg, progress)
 
 
 def _exclusion_boxes(observations, court: CourtModel, scale: float, cfg: Config) -> list[tuple[float, list[Box]]]:
-    """Player boxes from the coarse pass, scaled to the ball-proxy resolution."""
+    """Every person-sized moving blob, scaled to the ball-proxy resolution.
+
+    Not just the two chosen players: the near player walking up to the
+    lens is too big to count as "playing" but is exactly what the ball pass
+    must ignore, and spectators behind the fence produce ball-sized
+    fragments too. Anything above the far-player floor is masked.
+    """
+    pw, ph = court.proxy_size
+    min_area = cfg.player.min_area_frac_far * pw * ph
     out: list[tuple[float, list[Box]]] = []
     for obs in observations:
-        near, far = select_players(obs.blobs, court, cfg)
         boxes: list[Box] = []
-        for b in (near, far):
-            if b is None:
+        for b in obs.blobs:
+            if b.area < min_area:
                 continue
             x, y, w, h = b.box
             boxes.append(Box(x * scale, y * scale, (x + w) * scale, (y + h) * scale))

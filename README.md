@@ -121,8 +121,9 @@ linje = start-/stopptröskel, gröna fält = hittade poäng.
 
 ```
 video --> proxy (480px, 10 fps) --> bakgrundsmodell --> rörelseblobbar per bild
-      --> banmodell (ROI + nätlinje ur ackumulerad rörelse)
-      --> aktivitetssignal a(t) = rörelsemängd + spelarhastighet + "båda sidor"
+ljud  --> 2-6 kHz-transienter --> bollslag med tidsstämpel
+      --> banmodell (ROI + nätlinje ur fötternas histogram)
+      --> aktivitetssignal a(t) = rörelsemängd + spelarhastighet + slagtäthet + "båda sidor"
       --> hysteres-tröskling --> rallysegment (+ förkastade med orsak)
       --> features per rally (längd, slag, tempo, täckning, avslut, serve-start)
       --> viktad score --> ranking --> kategorier
@@ -134,11 +135,12 @@ Varje steg är en funktion på vanlig data, ingen delad state. Segmentering,
 features och scoring är ren numpy utan OpenCV: de är testade på syntetiska
 signaler och är det som portas rakt av till Swift.
 
-Den viktigaste designidén: **hastighet bär mer information än rörelsemängd.**
-Att "något rör sig på banan" skiljer knappt rally från promenad. Att någon
-sprintar och byter riktning gör det. Därför väger spelarnas hastighet tyngst
-i a(t), och antalet hastighetstoppar blir vår uppskattning av antal slag när
-bollen inte går att lita på.
+Två designidéer bär det mesta. **Hastighet säger mer än rörelsemängd:**
+att något rör sig på banan skiljer knappt rally från promenad, att någon
+sprintar och byter riktning gör det. **Ljudet är oberoende av perspektiv:**
+bortre spelaren är för liten för att synas pålitligt, men hans slag hörs.
+Ett segment utan ett enda hörbart slag är ingen poäng, hur mycket någon
+än springer.
 
 Detaljer, val av heuristik kontra ML och riskerna: `docs/ARCHITECTURE.md`.
 
@@ -157,10 +159,16 @@ Kan inte (än):
 - Kamera som panorerar eller zoomar. Kamerarörelse förkastar segmentet.
 - Hjälpa till om bollen är mindre än ~6 px i 1080p (för långt bort).
 
-Alla trösklar är kalibrerade på syntetisk film. Utvecklingsmiljön når inte
-YouTube, så riktig film måste hämtas på en vanlig dator: se
-`docs/GETTING_FOOTAGE.md` för vad vi letar efter, hur man laddar ner, och
-hur man märker facit i webappen.
+Kalibrerad på en riktig match (17 min, stativ bakom baslinjen, hardcourt):
+43 poäng, 10 av 10 kontrollrallyn hittade, bollspår i 31 poäng. Vad som
+gick fel först och vad som ändrades står i `docs/CALIBRATION_LOG.md`. Det
+som gav mest: **ljudet.** Slagen hörs även när bortre spelaren är fem
+pixlar bred.
+
+![Bollkedjor i ett riktigt rally](docs/img/ball_chains_real.jpg)
+
+Utvecklingsmiljön når inte YouTube, så film måste hämtas på en vanlig
+dator: `docs/GETTING_FOOTAGE.md`.
 
 ## Repo-layout
 
@@ -176,6 +184,7 @@ tennishl/
     observe.py       grovpass: bakgrundssubtraktion -> blobbar per bild
     court.py         ROI + nätlinje
     activity.py      a(t)
+    audio.py         bollslag ur ljudspåret
     segmentation.py  rally in/ut (ren numpy)
     features.py      per rally
     scoring.py       score, kategorier, padding, merge

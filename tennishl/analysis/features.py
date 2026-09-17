@@ -178,7 +178,10 @@ def extract_features(
     # half's on-screen depth. The far half is squashed to a few pixels by
     # perspective, so any far-player distance to the net line is meaningless
     # (and the far player's centroid always sits "at the net").
-    near_feet = tracks.near_feet[sl]
+    # Skip the last 2 s: segments end late, and walking to the net to pick
+    # up a ball after the point is not net play.
+    core = _window(t, segment.start_s, max(segment.start_s + 1.0, segment.end_s - 2.0))
+    near_feet = tracks.near_feet[core]
     v = near_feet[~np.isnan(near_feet)]
     near_half = max(1.0, court.y1 - court.net_y)
     nearest = float(np.min(np.abs(v - court.net_y)) / near_half) if v.size else 1.0

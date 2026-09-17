@@ -215,8 +215,11 @@ def link_tracks(
             len_score = min(1.0, len(points) / float(cfg.ball.full_length_points))
             cover_score = len(points) / span
             smooth_score = float(np.exp(-rms / max(1e-6, cfg.ball.accel_tolerance_px)))
+            # Smoothness dominates on purpose. A chain crawling along a
+            # player's body is long and dense but jagged; a ball in flight
+            # is the one thing on court that follows a clean parabola.
             confidence = float(
-                np.clip(0.40 * len_score + 0.40 * smooth_score + 0.20 * cover_score, 0.0, 1.0)
+                np.clip(0.25 * len_score + 0.55 * smooth_score + 0.20 * cover_score, 0.0, 1.0)
             )
 
             for f_idx, c_idx, _ in chain:

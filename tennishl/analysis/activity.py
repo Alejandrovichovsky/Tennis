@@ -64,6 +64,7 @@ def select_players(blobs: list[Blob], court: CourtModel, cfg: Config | None = No
     pw, ph = court.proxy_size
     frame_area = float(pw * ph)
     near_min = pcfg.min_area_frac_near * frame_area
+    near_max = pcfg.max_area_frac_near * frame_area
     far_min = pcfg.min_area_frac_far * frame_area
     far_max = pcfg.max_area_frac_far * frame_area
 
@@ -74,7 +75,7 @@ def select_players(blobs: list[Blob], court: CourtModel, cfg: Config | None = No
         if not (court.x0 <= b.cx <= court.x1 and court.y0 <= feet_y <= court.y1 + 0.05 * ph):
             continue
         if court.side(feet_y) > 0:
-            if b.area >= near_min and (near is None or b.area > near.area):
+            if near_min <= b.area <= near_max and (near is None or b.area > near.area):
                 near = b
         else:
             if far_min <= b.area <= far_max and (far is None or b.area > far.area):

@@ -41,7 +41,11 @@ class PlayerConfig:
     min_area_frac: float = 0.00008
     min_area_frac_near: float = 0.0006
     min_area_frac_far: float = 0.00008
-    max_area_frac: float = 0.06
+    # The coarse pass keeps very large blobs too (the near player walking
+    # up to the lens fills a third of the frame): they are not a *playing*
+    # player, but the ball pass must know where they are to ignore them.
+    max_area_frac: float = 0.5
+    max_area_frac_near: float = 0.06   # bigger than this = not on court, ignore for play
     max_area_frac_far: float = 0.012  # the near player's torso must not pass as "far"
     min_aspect: float = 0.7          # height/width; people are tall-ish
     max_blobs_per_frame: int = 16    # cap bookkeeping on noisy frames
@@ -120,7 +124,7 @@ class BallConfig:
     full_length_points: int = 20          # chain length that counts as "long"
     accel_tolerance_px: float = 6.0       # residual of local quadratic fit; a
                                           # real flight sits at ~0.5-3 px
-    min_confidence: float = 0.55          # below this we do NOT draw a trail
+    min_confidence: float = 0.65          # below this we do NOT draw a trail
     trail_seconds: float = 0.45
 
 
@@ -143,7 +147,7 @@ class ScoringConfig:
     fast_exchange_shot_rate: float = 1.4   # shots per second
     winner_finish_score: float = 0.62
     serve_onset_score: float = 0.6
-    net_play_depth_frac: float = 0.35      # near player's feet within this fraction of the near half's depth
+    net_play_depth_frac: float = 0.2       # near player's feet within this fraction of the near half's depth
 
 
 @dataclass
