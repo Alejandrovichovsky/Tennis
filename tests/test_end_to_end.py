@@ -64,9 +64,25 @@ def test_full_render_produces_montage(tmp_path: Path):
     video = tmp_path / "short.mp4"
     generate(video, SynthSpec(seconds=40.0, seed=2, width=640, height=360))
     out = tmp_path / "out"
-    cfg = Config().merged({"clip": {"max_highlights": 2}})
+    cfg = Config().merged({"clip": {"max_highlights": 2, "select_mode": "top"}})
     result = analyze(video, out, cfg)
     assert result.montage_path is not None and result.montage_path.exists()
     assert result.montage_path.stat().st_size > 10_000
     clips = list((out / "clips").glob("*.mp4"))
     assert 1 <= len(clips) <= 2
+
+
+@pytest.mark.slow
+def test_retune_from_cached_observations_matches_fresh_run(tmp_path: Path):
+    from tennishl.pipeline import retune
+
+    video = tmp_path / "short.mp4"
+    generate(video, SynthSpec(seconds=40.0, seed=2, width=640, height=360))
+    out = tmp_path / "out"
+    fresh = analyze(video, out, Config(), skip_clips=True, skip_ball=True)
+    again = retune(out, Config(), skip_clips=True, skip_ball=True)
+    assert [h.segment.start_s for h in again.highlights] == [h.segment.start_s for h in fresh.highlights]
+
+    # A stricter config must be honoured without re-decoding.
+    strict = retune(out, Config().merged({"segmentation": {"min_duration_s": 60.0}}), skip_clips=True, skip_ball=True)
+    assert strict.highlights == []

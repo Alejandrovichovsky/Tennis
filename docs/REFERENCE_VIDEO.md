@@ -1,36 +1,49 @@
-# Referensvideo: checklista
+# Referens: TennisCut
 
-Ingen referensvideo fanns bifogad när det här skrevs, så listan nedan är
-vad vi *antagit* att appen i referensen gör, utifrån kravlistan. Fyll i
-kolumnen "I referensen?" när ni tittat på den, och justera prioriteringen
-om något avviker.
+Källa: App Store-/Google Play-beskrivningar och recensioner (tenniscut.com
+själv går inte att nå från utvecklingsmiljön). Fyll på när ni provat appen.
 
-| # | Funktion | Antagen | I referensen? | Vår MVP |
-|---|----------|---------|---------------|---------|
-| 1 | Spela in match i appen | ja | | iOS: M1. Desktop: n/a |
-| 2 | Importera från Bilder | ja | | `tennishl analyze fil` |
-| 3 | Statisk kamera, hela banan | ja | | antaget överallt |
-| 4 | Analys efter matchen med progress | ja | | ja, stage-progress |
-| 5 | Klipper bort dödtid mellan poäng | ja | | ja |
-| 6 | Automatiska highlights (topp-N) | ja | | ja, `--top` |
-| 7 | Kategorier per klipp | ja (serve, forehand, backhand, rally, winner?) | | serve/winner/long_rally/net_play/fast_exchange. **Inte** forehand/backhand. |
-| 8 | Lista där klipp kan slås av/på | ja | | review.html + selection.json |
-| 9 | Färdig sammanhängande video | ja | | highlights.mp4 |
-| 10 | Bollspår i klippen | ja, valbart | | ja, bara vid hög confidence |
-| 11 | Exportera/dela | ja | | fil på disk |
-| 12 | Poäng-/matchställning i overlay | okänt | | nej |
-| 13 | Statistik (antal slag, längsta rally) | okänt | | finns i report.md |
-| 14 | Slow-motion på vinnande slag | okänt | | nej, enkelt att lägga till i ffmpeg-steget |
-| 15 | Musik/övergångar | okänt | | fade in/ut |
-| 16 | Spelarnamn / "vem vann poängen" | okänt | | nej |
+## Vad TennisCut gör
 
-## Saker att titta efter i referensen
+| Funktion | Hos dem | Hos oss (webapp) |
+|----------|---------|------------------|
+| Kärnlöfte: "två timmar på banan blir två minuter rallyn" | ja, det är produkten | ja, `select_mode: all` är default |
+| Klipper bort dödtid: väntan, servar mellan rallyn, bollplock, pauser | ja, on-device | ja |
+| Rally-till-rally-navigering | ja (Pro) | ja: korten i listan hoppar och spelar exakt det klippet |
+| Export av enskild poäng | ja (Pro) | ja: varje klipp är en egen fil |
+| Bollbana ("Ball Trajectory") | ja (Pro) | ja, bara när confidence räcker |
+| Video Insights (statistik) | ja (Pro), oklart exakt vad | report.md: antal poäng, längd, slag, tempo per poäng |
+| 4K-inspelning | ja (Pro) | n/a, vi analyserar; 4K-import går men proxyn gör jobbet |
+| Fjärrkontroll: en telefon filmar, en styr | ja | nej, inte i scope |
+| Coach Eye: bild-för-bild-granskning | ja | nej; kan bli nästa steg i spelaren (`,`/`.`) |
+| Delning till Instagram/WhatsApp/TikTok | ja | nej, fil på disk |
+| Highlight-kategorier (serve, forehand...) | **nämns inte** | serve/winner/lång duell/nätspel/snabbt utbyte |
+| Topp-N-urval / ranking | **nämns inte** | ja, valfritt läge |
+| On-device / privat | ja, tydligt marknadsfört | ja, lokalt |
+| Pris | gratis + Pro-abonnemang (längre matcher, HD-export, snabbare) | n/a |
 
-- Hur lång marginal före/efter poängen? Vår default är 2.0 / 2.5 s.
-- Klipps servebollen med, eller börjar klippet vid uppkastet?
-- Hur många klipp för en timmes match? Styr `max_highlights`.
-- Är bollspåret ett streck, prickar, eller en glödande kurva? Vi ritar
-  ett streck som tjocknar mot bollen, 0.45 s långt.
-- Visar de något när bollen *inte* hittas? Vi visar inget.
-- Om de har forehand/backhand: ser det ut att stämma? Det avgör om pose
-  hamnar på roadmapen.
+Slutsats: TennisCut är i första hand ett *dödtidsfilter*, inte en
+highlight-rankare. Vår ranking och kategorisering är utöver referensen. Det
+gör "alla rallyn" till rätt default och topp-N till ett tillval.
+
+## Recensionerna säger
+
+- Den enda konkreta kritiken: **klippen börjar för tidigt och slutar 1-2 s för
+  tidigt.** Det är exakt vår `pre_roll_s`/`post_roll_s` och segmentets
+  slutgräns. Vi ligger på 2.0 s före och 2.5 s efter, och sluttiden sätts
+  efter hysteres + `min_gap_s` dröjsmål, så vi bör snarare ha problemet
+  "slutar för sent". Mät på riktig film.
+- Folk uppskattar att originalet behålls. Vi rör aldrig källfilen.
+
+## Öppna frågor att svara på när ni provat appen
+
+- Hur lång marginal använder de i praktiken? Filma samma poäng, jämför.
+- Ritar de bollbanan som streck, prickar eller glöd? Visar de något när
+  bollen tappas?
+- Vad ingår i "Video Insights"?
+- Hur många rallyn per timme ger deras filter på en riktig match, och hur
+  många ger vårt på samma fil? Det är vårt precision/recall-mått.
+
+Källor: [App Store](https://apps.apple.com/us/app/tennis-cut/id6754323620),
+[Google Play](https://play.google.com/store/apps/details?id=com.tenniscut.mobile),
+[mwm.ai](https://mwm.ai/apps/tennis-cut/6754323620).

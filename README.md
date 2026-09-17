@@ -8,26 +8,50 @@ Det här repot innehåller:
 
 | Del | Status |
 |-----|--------|
-| `tennishl/` | **Körbar desktop-pipeline (Python).** Hela kedjan video -> poäng -> ranking -> klipp -> montage. Detta är MVP:n. |
-| `tests/` | Enhetstester för pipeline-logiken + långsamma end-to-end-tester på syntetisk video. |
-| `docs/` | Arkitektur, risker, milstolpar och iOS-portningsplan (AVFoundation/Vision). |
+| `tennishl serve` | **Lokal webapp.** Ladda upp, följ analysen, hoppa mellan poäng, bocka i/ur, rendera, märk facit, se recall/precision, justera trösklar och kör om utan att avkoda igen. |
+| `tennishl/` | **Pipeline (Python).** Hela kedjan video -> poäng -> ranking -> klipp -> montage. |
+| `tests/` | 52 tester: pipeline-logik på syntetiska signaler, end-to-end på syntetisk video, API och Playwright-test av UI:t. |
+| `docs/` | Arkitektur, risker, milstolpar, TennisCut-jämförelse, hur man skaffar film, iOS-portningsplan. |
 
-Prioritering just nu: **den ska fungera på datorn först.** iOS-appen är en
-port av samma steg och beskrivs i `docs/IOS_PLAN.md`.
+Default är TennisCuts kärnlöfte: **alla rallyn, dödtid bortklippt.** Topp-N
+med ranking är ett tillval.
 
 ## Kom igång
 
 ```bash
 python3 -m venv .venv && source .venv/bin/activate
-pip install -e .            # numpy, opencv-python-headless, imageio-ffmpeg
-pytest -q                   # snabba tester (< 1 s)
-pytest -q -m slow           # end-to-end på syntetisk video (~1-2 min)
+pip install -e .            # numpy, opencv, fastapi, imageio-ffmpeg (statisk ffmpeg ingår)
+tennishl serve              # http://127.0.0.1:8000
 ```
 
-`imageio-ffmpeg` drar med sig en statisk ffmpeg-binär, så inget mer behöver
-installeras. Finns `ffmpeg` i PATH används den istället.
+Webappen:
 
-### Kör på en riktig match
+1. Släpp en videofil på sidan, eller skriv sökvägen till den (då kopieras
+   inget). Välj "alla rallyn" eller "topp N". "Bara första N s" är för att
+   testa trösklar snabbt på en lång match.
+2. Följ analysen. När den är klar: videospelare, tidslinje med a(t) och alla
+   hittade/förkastade segment, och ett kort per poäng med feedback. Klicka
+   på ett kort så spelas exakt den poängen.
+3. Bocka ur det du inte vill ha, "Rendera montage", ladda ner.
+4. "Märk poäng": `I` och `O` på tangentbordet markerar var poäng börjar och
+   slutar. Spara, och recall/precision/gränsfel mot detektionen visas, med
+   klickbara missar och falska träffar.
+5. "Justera trösklar och kör om": ändra, kör om på sekunder (observationerna
+   är sparade, videon avkodas inte igen), se om siffrorna blir bättre.
+
+![Webappen efter analys och märkning](docs/img/webapp_job.jpg)
+
+Tester:
+
+```bash
+pytest -q -m "not slow"     # < 1 s
+pytest -q                   # allt, inkl. syntetisk video, API och Playwright (~35 s)
+```
+
+Playwright-testet använder en installerad Chromium (`playwright install
+chromium` om den saknas).
+
+### Kommandoraden, samma pipeline
 
 ```bash
 tennishl analyze match.mp4 -o match_out/
@@ -55,6 +79,8 @@ tennishl render match_out/
 Bra flaggor:
 
 ```bash
+tennishl retune out/ --config tuning.json                        # kör om utan att avkoda
+tennishl eval out/ truth.json                                    # recall/precision mot facit
 tennishl analyze match.mp4 -o out/ --top 8 --pre 1.5 --post 3   # färre klipp, annan marginal
 tennishl analyze match.mp4 -o out/ --max-seconds 600             # testa på första 10 min
 tennishl analyze match.mp4 -o out/ --no-ball                     # hoppa över bollspårning
@@ -131,8 +157,10 @@ Kan inte (än):
 - Kamera som panorerar eller zoomar. Kamerarörelse förkastar segmentet.
 - Hjälpa till om bollen är mindre än ~6 px i 1080p (för långt bort).
 
-Alla trösklar är kalibrerade på syntetisk film. Steg ett med riktig film
-är att köra `tennishl debug` och titta på `signal.png`.
+Alla trösklar är kalibrerade på syntetisk film. Utvecklingsmiljön når inte
+YouTube, så riktig film måste hämtas på en vanlig dator: se
+`docs/GETTING_FOOTAGE.md` för vad vi letar efter, hur man laddar ner, och
+hur man märker facit i webappen.
 
 ## Repo-layout
 
@@ -158,6 +186,11 @@ tennishl/
     montage.py       concat
     review.py        rapport, review.html, tumnaglar
     debug.py         signalplot, debugvideo
+  web/
+    app.py           FastAPI-routes
+    jobs.py          jobbkö, persistens, preview för HEVC
+    static/          index.html, app.js, style.css (inga beroenden)
+  eval.py            facit vs detektion
 tests/
 docs/
 ```

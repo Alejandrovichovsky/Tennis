@@ -4,21 +4,27 @@
           -> features -> scoring -> (ball tracking) -> clips -> montage
 
 Each arrow is a function call on plain data, so any stage can be swapped or
-re-run in isolation. ``analyze()`` writes everything to an output folder;
-``render()`` re-cuts from a saved analysis plus a user's selection.
+re-run in isolation. Three entry points:
+
+* ``analyze()``  - everything, from a video file to a montage.
+* ``retune()``   - everything *except* decoding: reloads the cached coarse
+                   observations and re-runs court/activity/segmentation/
+                   scoring with a new config. Seconds instead of minutes,
+                   which is what makes threshold tuning on real footage bearable.
+* ``render()``   - re-cut from a saved analysis plus an (edited) selection.
 """
 
 from __future__ import annotations
 
 import json
+import pickle
 import time
 from dataclasses import dataclass
 from pathlib import Path
 
-import numpy as np
-
 from .analysis import (
     Box,
+    CoarseResult,
     CourtModel,
     apply_clip_padding,
     build_highlights,
@@ -43,14 +49,17 @@ from .render import (
     write_selection,
     write_thumbnails,
 )
+from .render.debug import write_signal_plot
 from .types import BallPoint, BallTrack, Highlight, RallyFeatures, Segment, VideoInfo
 from .video import probe
 
 ANALYSIS_FILE = "analysis.json"
 HIGHLIGHTS_FILE = "highlights.json"
 SELECTION_FILE = "selection.json"
+OBSERVATIONS_FILE = "observations.pkl"
 REPORT_FILE = "report.md"
 REVIEW_FILE = "review.html"
+SIGNAL_PLOT_FILE = "signal.png"
 MONTAGE_FILE = "highlights.mp4"
 CLIPS_DIR = "clips"
 THUMBS_DIR = "thumbs"
@@ -65,6 +74,145 @@ class AnalyzeResult:
     n_rejected: int
     montage_path: Path | None
     out_dir: Path
+
+
+# ----------------------------------------------------------------------
+# Stage 1: decode (slow, cached)
+# ----------------------------------------------------------------------
+
+def observe(
+    video_path: str | Path,
+    out_dir: Path,
+    cfg: Config,
+    progress: Progress,
+    *,
+    max_seconds: float | None = None,
+) -> tuple[VideoInfo, CoarseResult]:
+    info = probe(video_path)
+    if max_seconds and max_seconds > 0:
+        info.duration_s = min(info.duration_s, max_seconds) if info.duration_s else max_seconds
+    progress.log(
+        f"Video: {info.width}x{info.height} @ {info.fps:.2f} fps, "
+        f"{info.duration_s:.0f} s, {info.frame_count} frames"
+    )
+    progress.stage("Analyserar rörelse")
+    coarse = run_coarse_pass(info, cfg, progress=progress.update, max_seconds=max_seconds)
+    progress.done(f"{len(coarse.observations)} samplade bilder @ {coarse.sample_fps:g} fps")
+    if len(coarse.observations) < 10:
+        raise RuntimeError("Videon är för kort eller kunde inte läsas.")
+
+    with (out_dir / OBSERVATIONS_FILE).open("wb") as fh:
+        pickle.dump({"info": info, "coarse": coarse, "proxy": cfg.proxy}, fh, protocol=pickle.HIGHEST_PROTOCOL)
+    return info, coarse
+
+
+def load_observations(out_dir: str | Path) -> tuple[VideoInfo, CoarseResult]:
+    with (Path(out_dir) / OBSERVATIONS_FILE).open("rb") as fh:
+        data = pickle.load(fh)
+    return data["info"], data["coarse"]
+
+
+# ----------------------------------------------------------------------
+# Stage 2..n: everything after decoding (fast, re-runnable)
+# ----------------------------------------------------------------------
+
+def analyze_from_observations(
+    info: VideoInfo,
+    coarse: CoarseResult,
+    out_dir: Path,
+    cfg: Config,
+    progress: Progress,
+    *,
+    skip_clips: bool = False,
+    skip_ball: bool = False,
+) -> AnalyzeResult:
+    t0 = time.time()
+    observations = coarse.observations
+
+    progress.stage("Hittar bana och spelare")
+    court = estimate_court(coarse.motion_map, observations, coarse.proxy_size, cfg)
+    signal = compute_activity(observations, court, cfg)
+    seg_result = segment_signal(signal.t, signal.smoothed, signal.spread, signal.camera_motion, cfg)
+    segments = seg_result.segments
+    progress.done(
+        f"bana confidence {court.confidence:.2f}, nätlinje y={court.net_y:.0f}px; "
+        f"{len(segments)} aktiva poäng, {len(seg_result.rejected)} förkastade"
+    )
+
+    progress.stage("Rankar poäng")
+    tracks = build_player_tracks(observations, court)
+    features = [extract_features(s, observations, signal, tracks, court, cfg) for s in segments]
+    highlights = build_highlights(segments, features, cfg)
+    progress.done(f"{sum(1 for h in highlights if h.selected)} klipp valda av {len(highlights)}")
+
+    if not skip_ball and highlights:
+        _track_balls(info, coarse, court, signal, tracks, highlights, cfg, progress)
+
+    apply_clip_padding(highlights, cfg, info.duration_s)
+    merge_adjacent_clips(highlights, cfg)
+
+    _write_analysis(out_dir, info, cfg, court, signal, seg_result, coarse.sample_fps)
+    write_signal_plot(out_dir / SIGNAL_PLOT_FILE, signal, seg_result)
+    _write_highlights(out_dir, info, highlights)
+    write_selection(out_dir / SELECTION_FILE, highlights)
+
+    montage_path: Path | None = None
+    if not skip_clips:
+        montage_path = _render_clips(info, highlights, out_dir, cfg, progress)
+        _write_highlights(out_dir, info, highlights)
+
+    progress.stage("Skriver rapport")
+    thumbs = write_thumbnails(info, highlights, out_dir / THUMBS_DIR)
+    write_review_html(
+        out_dir / REVIEW_FILE, info, highlights, thumbs,
+        thumbs_dir_name=THUMBS_DIR, min_ball_confidence=cfg.ball.min_confidence,
+    )
+    write_report(
+        out_dir / REPORT_FILE, info, highlights,
+        n_segments=len(segments), n_rejected=len(seg_result.rejected),
+        court_confidence=court.confidence, min_ball_confidence=cfg.ball.min_confidence,
+        montage_path=montage_path,
+    )
+    progress.done()
+    progress.log(f"Klart på {time.time() - t0:.0f} s -> {out_dir}")
+
+    return AnalyzeResult(
+        info=info, court=court, highlights=highlights,
+        n_segments=len(segments), n_rejected=len(seg_result.rejected),
+        montage_path=montage_path, out_dir=out_dir,
+    )
+
+
+def _track_balls(info, coarse, court, signal, tracks, highlights, cfg, progress) -> None:
+    chosen = [h for h in highlights if h.selected]
+    if not chosen:
+        return
+    progress.stage("Spårar bollen")
+    ball_scale = cfg.proxy.ball_width / float(coarse.proxy_size[0]) if info.width > cfg.proxy.ball_width else info.width / float(coarse.proxy_size[0])
+    excl = _exclusion_boxes(coarse.observations, court, ball_scale)
+    for i, h in enumerate(chosen):
+        window = [(t, b) for t, b in excl if h.segment.start_s - 1 <= t <= h.segment.end_s + 1]
+        try:
+            track = track_ball_in_window(
+                info, h.segment.start_s, h.segment.end_s, cfg, exclusion_boxes_by_time=window
+            )
+        except Exception as exc:  # the ball module must never take the pipeline down
+            progress.log(f"  bollspårning misslyckades för {h.id}: {exc}")
+            track = None
+        h.ball_track = track
+        if track is not None and track.confidence >= cfg.ball.min_confidence:
+            h.features = extract_features(
+                h.segment, coarse.observations, signal, tracks, court, cfg, ball_track=track
+            )
+            h.score, h.contributions = score_features(h.features, cfg)
+            h.categories = categorise(h.features, cfg)
+        progress.update(i + 1, len(chosen))
+    n_trails = sum(1 for h in chosen if h.ball_track and h.ball_track.confidence >= cfg.ball.min_confidence)
+    progress.done(f"bollspår med tillräcklig confidence: {n_trails}/{len(chosen)}")
+
+    highlights.sort(key=lambda h: h.score, reverse=True)
+    for rank, h in enumerate(highlights, start=1):
+        h.rank = rank
 
 
 def _exclusion_boxes(observations, court: CourtModel, scale: float) -> list[tuple[float, list[Box]]]:
@@ -82,6 +230,10 @@ def _exclusion_boxes(observations, court: CourtModel, scale: float) -> list[tupl
     return out
 
 
+# ----------------------------------------------------------------------
+# Public entry points
+# ----------------------------------------------------------------------
+
 def analyze(
     video_path: str | Path,
     out_dir: str | Path,
@@ -96,109 +248,28 @@ def analyze(
     progress = progress or Progress(quiet=True)
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
-    t0 = time.time()
-
-    info = probe(video_path)
-    if max_seconds and max_seconds > 0:
-        info.duration_s = min(info.duration_s, max_seconds) if info.duration_s else max_seconds
-    progress.log(
-        f"Video: {info.width}x{info.height} @ {info.fps:.2f} fps, "
-        f"{info.duration_s:.0f} s, {info.frame_count} frames"
+    info, coarse = observe(video_path, out_dir, cfg, progress, max_seconds=max_seconds)
+    return analyze_from_observations(
+        info, coarse, out_dir, cfg, progress, skip_clips=skip_clips, skip_ball=skip_ball
     )
 
-    # 1. Coarse pass ---------------------------------------------------
-    progress.stage("Analyserar rörelse")
-    coarse = run_coarse_pass(info, cfg, progress=progress.update, max_seconds=max_seconds)
-    observations = coarse.observations
-    progress.done(f"{len(observations)} samplade bilder @ {coarse.sample_fps:g} fps")
-    if len(observations) < 10:
-        raise RuntimeError("Videon är för kort eller kunde inte läsas.")
 
-    # 2. Court + activity + segmentation --------------------------------
-    progress.stage("Hittar bana och spelare")
-    court = estimate_court(coarse.motion_map, observations, coarse.proxy_size, cfg)
-    signal = compute_activity(observations, court, cfg)
-    seg_result = segment_signal(signal.t, signal.smoothed, signal.spread, signal.camera_motion, cfg)
-    segments = seg_result.segments
-    progress.done(
-        f"bana confidence {court.confidence:.2f}, nätlinje y={court.net_y:.0f}px; "
-        f"{len(segments)} aktiva poäng, {len(seg_result.rejected)} förkastade"
-    )
-
-    # 3. Features + scoring --------------------------------------------
-    progress.stage("Rankar poäng")
-    tracks = build_player_tracks(observations, court)
-    features = [extract_features(s, observations, signal, tracks, court, cfg) for s in segments]
-    highlights = build_highlights(segments, features, cfg)
-    progress.done(f"{sum(1 for h in highlights if h.selected)} klipp valda av {len(highlights)}")
-
-    # 4. Ball tracking on selected clips only ---------------------------
-    if not skip_ball and highlights:
-        chosen = [h for h in highlights if h.selected]
-        progress.stage("Spårar bollen")
-        ball_scale = (cfg.proxy.ball_width / float(info.width)) / (coarse.proxy_size[0] / float(info.width))
-        excl = _exclusion_boxes(observations, court, ball_scale)
-        for i, h in enumerate(chosen):
-            window = [(t, b) for t, b in excl if h.segment.start_s - 1 <= t <= h.segment.end_s + 1]
-            try:
-                track = track_ball_in_window(
-                    info, h.segment.start_s, h.segment.end_s, cfg, exclusion_boxes_by_time=window
-                )
-            except Exception as exc:  # ball module must never take the pipeline down
-                progress.log(f"  bollspårning misslyckades för {h.id}: {exc}")
-                track = None
-            h.ball_track = track
-            if track is not None and track.confidence >= cfg.ball.min_confidence:
-                # Re-derive shot count from the ball and re-score.
-                h.features = extract_features(
-                    h.segment, observations, signal, tracks, court, cfg, ball_track=track
-                )
-                h.score, h.contributions = score_features(h.features, cfg)
-                h.categories = categorise(h.features, cfg)
-            progress.update(i + 1, len(chosen))
-        n_trails = sum(
-            1 for h in chosen if h.ball_track and h.ball_track.confidence >= cfg.ball.min_confidence
-        )
-        progress.done(f"bollspår med tillräcklig confidence: {n_trails}/{len(chosen)}")
-
-        # Scores may have moved; keep the ranking honest.
-        highlights.sort(key=lambda h: h.score, reverse=True)
-        for rank, h in enumerate(highlights, start=1):
-            h.rank = rank
-
-    # 5. Padding + merge ------------------------------------------------
-    apply_clip_padding(highlights, cfg, info.duration_s)
-    merge_adjacent_clips(highlights, cfg)
-
-    # 6. Persist analysis before the slow render step -------------------
-    _write_analysis(out_dir, info, cfg, court, signal, seg_result, coarse.sample_fps)
-    _write_highlights(out_dir, info, highlights)
-    write_selection(out_dir / SELECTION_FILE, highlights)
-
-    # 7. Cut + montage --------------------------------------------------
-    montage_path: Path | None = None
-    if not skip_clips:
-        montage_path = _render_clips(info, highlights, out_dir, cfg, progress)
-        _write_highlights(out_dir, info, highlights)  # now with clip paths
-
-    # 8. Human-facing outputs ------------------------------------------
-    thumbs = write_thumbnails(info, highlights, out_dir / THUMBS_DIR)
-    write_review_html(
-        out_dir / REVIEW_FILE, info, highlights, thumbs,
-        thumbs_dir_name=THUMBS_DIR, min_ball_confidence=cfg.ball.min_confidence,
-    )
-    write_report(
-        out_dir / REPORT_FILE, info, highlights,
-        n_segments=len(segments), n_rejected=len(seg_result.rejected),
-        court_confidence=court.confidence, min_ball_confidence=cfg.ball.min_confidence,
-        montage_path=montage_path,
-    )
-    progress.log(f"Klart på {time.time() - t0:.0f} s -> {out_dir}")
-
-    return AnalyzeResult(
-        info=info, court=court, highlights=highlights,
-        n_segments=len(segments), n_rejected=len(seg_result.rejected),
-        montage_path=montage_path, out_dir=out_dir,
+def retune(
+    out_dir: str | Path,
+    cfg: Config | None = None,
+    *,
+    progress: Progress | None = None,
+    skip_clips: bool = False,
+    skip_ball: bool = False,
+) -> AnalyzeResult:
+    """Re-run everything after decoding with a new config."""
+    cfg = cfg or Config()
+    progress = progress or Progress(quiet=True)
+    out_dir = Path(out_dir)
+    info, coarse = load_observations(out_dir)
+    progress.log(f"Återanvänder {len(coarse.observations)} sparade observationer")
+    return analyze_from_observations(
+        info, coarse, out_dir, cfg, progress, skip_clips=skip_clips, skip_ball=skip_ball
     )
 
 
@@ -228,25 +299,17 @@ def render(out_dir: str | Path, cfg: Config | None = None, *, progress: Progress
     progress = progress or Progress(quiet=True)
     out_dir = Path(out_dir)
 
-    data = json.loads((out_dir / HIGHLIGHTS_FILE).read_text(encoding="utf-8"))
-    info = VideoInfo(**data["video"])
-    highlights = [_highlight_from_dict(d) for d in data["highlights"]]
+    info, highlights = load_highlights(out_dir)
 
     sel_path = Path(selection_path) if selection_path else out_dir / SELECTION_FILE
     if sel_path.exists():
-        sel = json.loads(sel_path.read_text(encoding="utf-8"))
-        by_id = {c["id"]: c for c in sel.get("clips", [])}
-        for h in highlights:
-            if h.id in by_id:
-                c = by_id[h.id]
-                h.selected = bool(c.get("selected", h.selected))
-                h.clip_start_s = float(c.get("start_s", h.clip_start_s))
-                h.clip_end_s = float(c.get("end_s", h.clip_end_s))
-        progress.log(f"Urval laddat fran {sel_path.name}")
+        apply_selection(highlights, json.loads(sel_path.read_text(encoding="utf-8")))
+        progress.log(f"Urval laddat från {sel_path.name}")
 
     chosen = sorted([h for h in highlights if h.selected], key=lambda h: h.clip_start_s)
     if not chosen:
         progress.log("Inga klipp valda.")
+        _write_highlights(out_dir, info, highlights)
         return None
 
     clip_dir = out_dir / CLIPS_DIR
@@ -265,7 +328,19 @@ def render(out_dir: str | Path, cfg: Config | None = None, *, progress: Progress
     montage = build_montage(paths, out_dir / MONTAGE_FILE)
     progress.done(f"{montage}")
     _write_highlights(out_dir, info, highlights)
+    write_selection(out_dir / SELECTION_FILE, highlights)
     return montage
+
+
+def apply_selection(highlights: list[Highlight], sel: dict) -> None:
+    by_id = {c["id"]: c for c in sel.get("clips", [])}
+    for h in highlights:
+        c = by_id.get(h.id)
+        if c is None:
+            continue
+        h.selected = bool(c.get("selected", h.selected))
+        h.clip_start_s = float(c.get("start_s", h.clip_start_s))
+        h.clip_end_s = float(c.get("end_s", h.clip_end_s))
 
 
 def _clip_matches(path: Path, h: Highlight) -> bool:
@@ -280,7 +355,7 @@ def _clip_matches(path: Path, h: Highlight) -> bool:
 
 def _write_analysis(out_dir: Path, info: VideoInfo, cfg: Config, court: CourtModel, signal, seg_result, sample_fps: float) -> None:
     # Store the activity signal at 2 Hz to keep the file readable; the full
-    # signal is reconstructible by re-running the coarse pass.
+    # signal is reconstructible from observations.pkl.
     step = max(1, int(round(sample_fps / 2.0)))
     payload = {
         "video": info.to_dict(),
@@ -303,6 +378,12 @@ def _write_analysis(out_dir: Path, info: VideoInfo, cfg: Config, court: CourtMod
 def _write_highlights(out_dir: Path, info: VideoInfo, highlights: list[Highlight]) -> None:
     payload = {"video": info.to_dict(), "highlights": [h.to_dict() for h in highlights]}
     (out_dir / HIGHLIGHTS_FILE).write_text(json.dumps(payload, indent=1), encoding="utf-8")
+
+
+def load_highlights(out_dir: str | Path) -> tuple[VideoInfo, list[Highlight]]:
+    data = json.loads((Path(out_dir) / HIGHLIGHTS_FILE).read_text(encoding="utf-8"))
+    info = VideoInfo(**data["video"])
+    return info, [_highlight_from_dict(d) for d in data["highlights"]]
 
 
 def _highlight_from_dict(d: dict) -> Highlight:

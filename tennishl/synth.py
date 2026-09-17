@@ -35,7 +35,7 @@ class SynthSpec:
     seconds: float = 90.0
     seed: int = 7
     camera_bump_at_s: float | None = None
-    noise_sigma: float = 3.0
+    noise_sigma: float = 2.5
 
 
 def _court_background(w: int, h: int, rng: random.Random) -> np.ndarray:
@@ -88,19 +88,22 @@ def generate(out_path: str | Path, spec: SynthSpec | None = None) -> list[Point]
     bg = _court_background(w, h, rng)
     points = _schedule(spec, rng)
 
-    fourcc = cv2.VideoWriter_fourcc(*"mp4v")
-    writer = cv2.VideoWriter(str(out_path), fourcc, spec.fps, (w, h))
-    if not writer.isOpened():
-        raise IOError(f"Could not open VideoWriter for {out_path}")
+    # Pipe raw frames into ffmpeg/libx264 instead of cv2.VideoWriter: the
+    # headless OpenCV build only offers MPEG-4 part 2, which browsers refuse
+    # to play, and the web UI needs to show this file.
+    writer = _H264Writer(out_path, w, h, spec.fps)
 
     n_frames = int(spec.seconds * spec.fps)
     near_base_y, far_base_y = int(h * 0.90), int(h * 0.24)
 
     # Sensor noise: drawing fresh Gaussian noise per 1280x720x3 frame is the
-    # single slowest thing in this generator, so pre-bake a small bank of
-    # noise frames and cycle through them with a random roll.
+    # single slowest thing in this generator, so pre-bake a bank of noise
+    # frames and pick one at random with a random 2-D shift per frame. The
+    # shift must be random, not incremental: a pattern that slides steadily
+    # looks like coherent motion to a background model, which real sensor
+    # noise never does.
     noise_bank = [
-        np_rng.normal(0.0, spec.noise_sigma, size=(h, w, 3)).astype(np.int16) for _ in range(6)
+        np_rng.normal(0.0, spec.noise_sigma, size=(h, w, 3)).astype(np.int16) for _ in range(8)
     ]
     near_size, far_size = (int(w * 0.045), int(h * 0.20)), (int(w * 0.025), int(h * 0.11))
 
@@ -166,13 +169,42 @@ def generate(out_path: str | Path, spec: SynthSpec | None = None) -> list[Point]
             M = np.float32([[1, 0, bump_offset[0]], [0, 1, bump_offset[1]]])
             frame = cv2.warpAffine(frame, M, (w, h), borderMode=cv2.BORDER_REPLICATE)
 
-        noise = noise_bank[fi % len(noise_bank)]
-        noise = np.roll(noise, shift=(fi * 37) % h, axis=0)
+        noise = noise_bank[rng.randrange(len(noise_bank))]
+        noise = np.roll(noise, shift=(rng.randrange(h), rng.randrange(w)), axis=(0, 1))
         frame = np.clip(frame.astype(np.int16) + noise, 0, 255).astype(np.uint8)
         writer.write(frame)
 
     writer.release()
     return points
+
+
+class _H264Writer:
+    def __init__(self, out_path: str | Path, w: int, h: int, fps: float) -> None:
+        import subprocess
+
+        from .video.ffmpeg import ffmpeg_exe
+
+        self._proc = subprocess.Popen(
+            [
+                ffmpeg_exe(), "-hide_banner", "-loglevel", "error", "-nostdin",
+                "-f", "rawvideo", "-pix_fmt", "bgr24", "-s", f"{w}x{h}", "-r", f"{fps:.4f}", "-i", "-",
+                "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p",
+                "-movflags", "+faststart", "-y", str(out_path),
+            ],
+            stdin=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+
+    def write(self, frame: np.ndarray) -> None:
+        assert self._proc.stdin is not None
+        self._proc.stdin.write(frame.tobytes())
+
+    def release(self) -> None:
+        assert self._proc.stdin is not None
+        self._proc.stdin.close()
+        err = self._proc.stderr.read() if self._proc.stderr else b""
+        if self._proc.wait() != 0:
+            raise RuntimeError(f"ffmpeg failed: {err.decode('utf-8', 'replace')[-800:]}")
 
 
 def write_ground_truth(points: list[Point], path: str | Path) -> None:

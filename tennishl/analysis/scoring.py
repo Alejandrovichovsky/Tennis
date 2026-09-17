@@ -103,7 +103,7 @@ def build_highlights(
     highlights.sort(key=lambda h: h.score, reverse=True)
     for rank, h in enumerate(highlights, start=1):
         h.rank = rank
-        h.selected = rank <= cfg.clip.max_highlights
+        h.selected = cfg.clip.select_mode == "all" or rank <= cfg.clip.max_highlights
     return highlights
 
 

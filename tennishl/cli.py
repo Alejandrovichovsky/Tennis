@@ -97,6 +97,43 @@ def cmd_debug(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_serve(args: argparse.Namespace) -> int:
+    from .web import serve
+
+    print(f"tennishl  http://{args.host}:{args.port}   (data: {Path(args.data_dir).resolve()})")
+    serve(args.data_dir, host=args.host, port=args.port)
+    return 0
+
+
+def cmd_retune(args: argparse.Namespace) -> int:
+    from .pipeline import retune
+
+    cfg = _config_from_args(args)
+    progress = Progress(json_lines=args.json_progress, quiet=args.quiet)
+    result = retune(args.out_dir, cfg, progress=progress, skip_clips=args.no_clips, skip_ball=args.no_ball)
+    if not args.quiet:
+        print(f"Poäng hittade: {result.n_segments}   förkastade: {result.n_rejected}")
+    return 0
+
+
+def cmd_eval(args: argparse.Namespace) -> int:
+    import json as _json
+
+    from .eval import evaluate_files
+    from .render.review import fmt_time
+
+    r = evaluate_files(Path(args.out_dir) / "analysis.json", args.truth)
+    print(f"recall {r.recall:.2f} ({r.matched}/{r.n_truth})   precision {r.precision:.2f} ({r.matched}/{r.n_detected})")
+    print(f"startfel {r.mean_start_error_s:.2f} s   slutfel {r.mean_end_error_s:.2f} s")
+    if r.missed:
+        print("missade:  " + ", ".join(fmt_time(m["start_s"]) for m in r.missed))
+    if r.false_positives:
+        print("falska:   " + ", ".join(fmt_time(m["start_s"]) for m in r.false_positives))
+    if args.json:
+        print(_json.dumps(r.to_dict(), indent=1))
+    return 0
+
+
 def cmd_synth(args: argparse.Namespace) -> int:
     from .synth import SynthSpec, generate, write_ground_truth
 
@@ -144,6 +181,25 @@ def build_parser() -> argparse.ArgumentParser:
     d.add_argument("--no-video", action="store_true")
     common(d)
     d.set_defaults(func=cmd_debug)
+
+    w = sub.add_parser("serve", help="lokal webapp")
+    w.add_argument("--data-dir", default="tennishl_data", help="var jobb och utdata sparas")
+    w.add_argument("--host", default="127.0.0.1")
+    w.add_argument("--port", type=int, default=8000)
+    w.set_defaults(func=cmd_serve)
+
+    t = sub.add_parser("retune", help="kör om allt utom avkodningen med ny konfig")
+    t.add_argument("out_dir")
+    t.add_argument("--no-clips", action="store_true")
+    t.add_argument("--no-ball", action="store_true")
+    common(t)
+    t.set_defaults(func=cmd_retune)
+
+    e = sub.add_parser("eval", help="jämför analys med facit")
+    e.add_argument("out_dir")
+    e.add_argument("truth", help="truth.json: [{start_s, end_s}]")
+    e.add_argument("--json", action="store_true")
+    e.set_defaults(func=cmd_eval)
 
     s = sub.add_parser("synth", help="generera syntetisk testvideo")
     s.add_argument("out")

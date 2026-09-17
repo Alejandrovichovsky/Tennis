@@ -129,6 +129,10 @@ class ClipConfig:
     pre_roll_s: float = 2.0
     post_roll_s: float = 2.5
     min_clip_gap_s: float = 2.5    # points closer than this -> one clip
+    # "all": every detected rally, dead time removed (the TennisCut default:
+    #        "two hours on court becomes two minutes of rallies").
+    # "top": only the best ``max_highlights`` rallies.
+    select_mode: str = "all"
     max_highlights: int = 12
     fade_s: float = 0.25
     crf: int = 20

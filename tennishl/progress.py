@@ -11,10 +11,25 @@ import sys
 import time
 
 
+from typing import Callable, Optional
+
+EventFn = Callable[[dict], None]
+
+
 class Progress:
-    def __init__(self, *, json_lines: bool = False, quiet: bool = False) -> None:
+    """``on_event`` receives every progress/log event as a dict - the web UI
+    hooks in there; the CLI draws to stderr."""
+
+    def __init__(
+        self,
+        *,
+        json_lines: bool = False,
+        quiet: bool = False,
+        on_event: Optional[EventFn] = None,
+    ) -> None:
         self.json_lines = json_lines
         self.quiet = quiet
+        self.on_event = on_event
         self._stage = ""
         self._last_draw = 0.0
         self._stage_start = 0.0
@@ -32,10 +47,12 @@ class Progress:
     def done(self, message: str | None = None) -> None:
         self._emit(1.0, force=True)
         self._finish_line()
-        if message and not self.quiet:
+        if message:
             self.log(message)
 
     def log(self, message: str) -> None:
+        if self.on_event:
+            self.on_event({"type": "log", "message": message})
         if self.quiet:
             return
         if self.json_lines:
@@ -46,12 +63,14 @@ class Progress:
 
     # ------------------------------------------------------------------
     def _emit(self, frac: float, *, force: bool = False) -> None:
-        if self.quiet:
-            return
         now = time.time()
         if not force and now - self._last_draw < 0.15:
             return
         self._last_draw = now
+        if self.on_event:
+            self.on_event({"type": "progress", "stage": self._stage, "fraction": round(frac, 4)})
+        if self.quiet:
+            return
         if self.json_lines:
             print(
                 json.dumps({"type": "progress", "stage": self._stage, "fraction": round(frac, 4)}),

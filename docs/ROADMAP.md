@@ -53,16 +53,23 @@ för gul boll som viktning, `max_area_px` upp för blur-streck.
 
 ## M6: Precision på egna matcher
 
-Inte påbörjat. Behöver:
+Verktygen är klara, filmen saknas.
 
-1. 3-5 matcher, 1080p30, stativ bakom baslinjen, hela banan i bild, olika
-   ljus (sol, moln, hall).
-2. Facit: en person tittar igenom och skriver ner start/slut för varje poäng
-   i en JSON som `synth.py` producerar (`[{start_s, end_s, shots}]`).
-3. Ett litet skript `tennishl eval match.mp4 truth.json` som rapporterar
-   recall/precision/gränsfel och slag-räkningsfel. (Inte skrivet än, ~1 h.)
-4. Iterera trösklar. Allt är i `config.py`, körs om på sparade observationer
-   utan att avkoda igen.
+1. Film: se `GETTING_FOOTAGE.md`. Utvecklingsmiljön når inte YouTube.
+2. Facit: märkläget i webappen (`I`/`O`), sparas som `truth.json`.
+3. Mätning: `tennishl eval` och eval-panelen i webappen. Recall, precision,
+   start-/slutfel, klickbara missar.
+4. Iterering: "Kör om" i webappen på sparade observationer, sekunder per
+   varv.
+
+## Webapp (tillagd efter M5)
+
+Klart: upload/sökväg, jobbkö, progress, spelare + tidslinje, kort per poäng
+som spelar exakt den poängen, i/ur-bockning, rendering, nedladdning,
+märkläge, eval, retune-panel, HEVC-preview. Playwright-testat.
+
+Inte gjort: bild-för-bild-stegning (`,`/`.`), dra i klippgränser på
+tidslinjen, jämförelse av två körningar sida vid sida, delning.
 
 ## Efter MVP, i prioritetsordning
 

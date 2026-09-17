@@ -74,7 +74,7 @@ def test_at_most_two_labels_most_specific_first():
 
 
 def test_ranking_and_selection_limit():
-    cfg = Config().merged({"clip": {"max_highlights": 2}})
+    cfg = Config().merged({"clip": {"max_highlights": 2, "select_mode": "top"}})
     segments = [seg(0, 5), seg(20, 35), seg(50, 58)]
     features = [feats(duration_s=5, shot_count=3), feats(duration_s=15, shot_count=12), feats(duration_s=8, shot_count=6)]
     hs = build_highlights(segments, features, cfg)
@@ -127,6 +127,12 @@ def test_far_apart_points_are_not_merged():
     hs = build_highlights([seg(10.0, 20.0), seg(26.0, 30.0)], [feats(), feats()], cfg)
     apply_clip_padding(hs, cfg, video_duration_s=100.0)
     assert len(merge_adjacent_clips(hs, cfg)) == 2
+
+
+def test_select_mode_all_keeps_everything():
+    cfg = Config().merged({"clip": {"max_highlights": 1, "select_mode": "all"}})
+    hs = build_highlights([seg(0, 5), seg(20, 35), seg(50, 58)], [feats(), feats(), feats()], cfg)
+    assert all(h.selected for h in hs)
 
 
 def test_config_merge_rejects_unknown_keys():
