@@ -1,0 +1,24 @@
+__pycache__/
+*.pyc
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+.venv/
+venv/
+
+# outputs
+*_highlights/
+out/
+*.mp4
+*.mov
+*.MOV
+*.truth.json
+!docs/**/*.png
+
+# macOS / Xcode
+.DS_Store
+xcuserdata/
+*.xcuserstate
+DerivedData/
+.build/
