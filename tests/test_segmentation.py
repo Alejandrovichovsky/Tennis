@@ -80,9 +80,22 @@ def test_too_short_bursts_are_rejected_with_reason():
     assert res.rejected[0].start_s == pytest.approx(5.0, abs=0.6)
 
 
-def test_too_long_is_rejected():
+def test_too_long_is_split_at_the_valley():
+    """Two points that never drop below the exit threshold between them."""
     cfg = Config()
-    t, a, spread, cam = make_signal(120.0, [(5.0, 80.0)])
+    t, a, spread, cam = make_signal(120.0, [(5.0, 80.0)], noise=0.0)
+    dip = (t >= 40.0) & (t <= 41.0)
+    a[dip] = 0.5  # above the exit threshold, so no natural break
+    res = segment_signal(t, a, spread, cam, cfg)
+    assert len(res.segments) == 2
+    assert abs(res.segments[0].end_s - 40.5) < 1.0
+    assert abs(res.segments[1].start_s - 40.5) < 1.0
+    assert res.rejected == []
+
+
+def test_flat_over_long_stretch_is_still_rejected_when_unsplittable():
+    cfg = Config().merged({"segmentation": {"max_duration_s": 10.0, "min_duration_s": 6.0}})
+    t, a, spread, cam = make_signal(40.0, [(5.0, 16.0)], noise=0.0)  # 11 s, halves would be < 6 s
     res = segment_signal(t, a, spread, cam, cfg)
     assert res.segments == []
     assert res.rejected[0].reason == "too_long"

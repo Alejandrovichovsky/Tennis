@@ -131,16 +131,20 @@ def analyze_from_observations(
 
     progress.stage("Hittar bana och spelare")
     court = estimate_court(coarse.motion_map, observations, coarse.proxy_size, cfg)
-    signal = compute_activity(observations, court, cfg)
-    seg_result = segment_signal(signal.t, signal.smoothed, signal.spread, signal.camera_motion, cfg)
+    audio_hits = coarse.audio_hits if cfg.audio.enabled else None
+    signal = compute_activity(observations, court, cfg, audio_hits=audio_hits)
+    seg_result = segment_signal(
+        signal.t, signal.smoothed, signal.spread, signal.camera_motion, cfg, audio_hits=audio_hits
+    )
     segments = seg_result.segments
+    audio_note = f", {audio_hits.size} bollslag hörda" if audio_hits is not None else ", inget ljud"
     progress.done(
-        f"bana confidence {court.confidence:.2f}, nätlinje y={court.net_y:.0f}px; "
+        f"bana confidence {court.confidence:.2f}, nätlinje y={court.net_y:.0f}px{audio_note}; "
         f"{len(segments)} aktiva poäng, {len(seg_result.rejected)} förkastade"
     )
 
     progress.stage("Rankar poäng")
-    tracks = build_player_tracks(observations, court)
+    tracks = build_player_tracks(observations, court, cfg)
     features = [extract_features(s, observations, signal, tracks, court, cfg) for s in segments]
     highlights = build_highlights(segments, features, cfg)
     progress.done(f"{sum(1 for h in highlights if h.selected)} klipp valda av {len(highlights)}")
@@ -189,7 +193,7 @@ def _track_balls(info, coarse, court, signal, tracks, highlights, cfg, progress)
         return
     progress.stage("Spårar bollen")
     ball_scale = cfg.proxy.ball_width / float(coarse.proxy_size[0]) if info.width > cfg.proxy.ball_width else info.width / float(coarse.proxy_size[0])
-    excl = _exclusion_boxes(coarse.observations, court, ball_scale)
+    excl = _exclusion_boxes(coarse.observations, court, ball_scale, cfg)
     for i, h in enumerate(chosen):
         window = [(t, b) for t, b in excl if h.segment.start_s - 1 <= t <= h.segment.end_s + 1]
         try:
@@ -215,11 +219,11 @@ def _track_balls(info, coarse, court, signal, tracks, highlights, cfg, progress)
         h.rank = rank
 
 
-def _exclusion_boxes(observations, court: CourtModel, scale: float) -> list[tuple[float, list[Box]]]:
+def _exclusion_boxes(observations, court: CourtModel, scale: float, cfg: Config) -> list[tuple[float, list[Box]]]:
     """Player boxes from the coarse pass, scaled to the ball-proxy resolution."""
     out: list[tuple[float, list[Box]]] = []
     for obs in observations:
-        near, far = select_players(obs.blobs, court)
+        near, far = select_players(obs.blobs, court, cfg)
         boxes: list[Box] = []
         for b in (near, far):
             if b is None:
@@ -362,6 +366,10 @@ def _write_analysis(out_dir: Path, info: VideoInfo, cfg: Config, court: CourtMod
         "config": cfg.to_dict(),
         "court": court.to_dict(),
         "segmentation": seg_result.to_dict(),
+        "audio": None if signal.audio_hits is None else {
+            "n_hits": int(signal.audio_hits.size),
+            "hits": [round(float(v), 2) for v in signal.audio_hits],
+        },
         "signal": {
             "sample_dt": round(signal.sample_dt * step, 4),
             "t": [round(float(v), 2) for v in signal.t[::step]],
@@ -370,6 +378,7 @@ def _write_analysis(out_dir: Path, info: VideoInfo, cfg: Config, court: CourtMod
             "fg": [round(float(v), 3) for v in signal.fg[::step]],
             "spread": [int(v) for v in signal.spread[::step]],
             "camera_motion": [round(float(v), 3) for v in signal.camera_motion[::step]],
+            "audio": None if signal.audio is None else [round(float(v), 3) for v in signal.audio[::step]],
         },
     }
     (out_dir / ANALYSIS_FILE).write_text(json.dumps(payload, indent=1), encoding="utf-8")

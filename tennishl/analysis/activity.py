@@ -36,28 +36,48 @@ class ActivitySignal:
     spread: np.ndarray       # 0/1 both-sides indicator
     camera_motion: np.ndarray
     sample_dt: float
+    audio: np.ndarray | None = None      # normalised hit density, None = no audio
+    audio_hits: np.ndarray | None = None  # raw hit times
 
     def __len__(self) -> int:
         return int(self.t.size)
 
+    @property
+    def has_audio(self) -> bool:
+        return self.audio_hits is not None
 
-def select_players(blobs: list[Blob], court: CourtModel) -> tuple[Blob | None, Blob | None]:
+
+def select_players(blobs: list[Blob], court: CourtModel, cfg: Config | None = None) -> tuple[Blob | None, Blob | None]:
     """Pick at most one player per side of the net: the biggest blob there.
+
+    Side is decided by the feet (bottom of the box). Each side has its own
+    size window because of perspective: what counts as a person on the far
+    court would be noise on the near court, and the near player's torso
+    (when he is split into parts) would count as a far player if we let
+    large blobs through there.
 
     Not a real multi-object tracker - on purpose. For a fixed camera with two
     players this is nearly as good and about a hundred times cheaper. Doubles
     would need the real thing (see docs/ROADMAP.md).
     """
+    pcfg = (cfg or Config()).player
+    pw, ph = court.proxy_size
+    frame_area = float(pw * ph)
+    near_min = pcfg.min_area_frac_near * frame_area
+    far_min = pcfg.min_area_frac_far * frame_area
+    far_max = pcfg.max_area_frac_far * frame_area
+
     near: Blob | None = None
     far: Blob | None = None
     for b in blobs:
-        if not court.contains(b.cx, b.cy):
+        feet_y = b.cy + b.h / 2.0
+        if not (court.x0 <= b.cx <= court.x1 and court.y0 <= feet_y <= court.y1 + 0.05 * ph):
             continue
-        if court.side(b.cy) > 0:
-            if near is None or b.area > near.area:
+        if court.side(feet_y) > 0:
+            if b.area >= near_min and (near is None or b.area > near.area):
                 near = b
         else:
-            if far is None or b.area > far.area:
+            if far_min <= b.area <= far_max and (far is None or b.area > far.area):
                 far = b
     return near, far
 
@@ -66,11 +86,14 @@ def compute_activity(
     observations: list[FrameObservation],
     court: CourtModel,
     cfg: Config,
+    audio_hits: np.ndarray | None = None,
 ) -> ActivitySignal:
     """Fill in per-observation fields and return the combined signal.
 
     Mutates ``observations`` (sets ``player_speed``, ``spread``, ``activity``)
     so that the debug overlay can show exactly what the segmenter saw.
+    ``audio_hits`` (seconds of racket impacts) adds a third channel when the
+    file has sound; without it the visual weights are renormalised.
     """
     n = len(observations)
     if n == 0:
@@ -96,7 +119,7 @@ def compute_activity(
     prev_t = times[0]
 
     for i, obs in enumerate(observations):
-        near, far = select_players(obs.blobs, court)
+        near, far = select_players(obs.blobs, court, cfg)
         dt = max(1e-3, obs.t - prev_t)
 
         def speed_of(cur: Blob | None, prev: Blob | None) -> float:
@@ -126,6 +149,19 @@ def compute_activity(
         + cfg.activity.w_spread * spreads
     )
     total_w = cfg.activity.w_foreground + cfg.activity.w_player_speed + cfg.activity.w_spread
+
+    n_audio: np.ndarray | None = None
+    if audio_hits is not None and cfg.activity.w_audio > 0:
+        from .audio import hit_density
+
+        density = hit_density(np.asarray(audio_hits, dtype=np.float64), times,
+                              window_s=cfg.audio.density_window_s)
+        # A rally is ~1 hit/s; saturate there instead of percentile-scaling,
+        # because a match with few points must not inflate its quiet parts.
+        n_audio = np.clip(density / 1.0, 0.0, 1.0)
+        raw = raw + cfg.activity.w_audio * n_audio
+        total_w += cfg.activity.w_audio
+
     if total_w > 0:
         raw = raw / total_w
 
@@ -144,4 +180,6 @@ def compute_activity(
         spread=spreads,
         camera_motion=cam,
         sample_dt=sample_dt,
+        audio=n_audio,
+        audio_hits=None if audio_hits is None else np.asarray(audio_hits, dtype=np.float64),
     )

@@ -86,8 +86,9 @@ def cmd_debug(args: argparse.Namespace) -> int:
     coarse = run_coarse_pass(info, cfg, progress=progress.update, max_seconds=args.max_seconds)
     progress.done()
     court = estimate_court(coarse.motion_map, coarse.observations, coarse.proxy_size, cfg)
-    signal = compute_activity(coarse.observations, court, cfg)
-    seg = segment_signal(signal.t, signal.smoothed, signal.spread, signal.camera_motion, cfg)
+    signal = compute_activity(coarse.observations, court, cfg, audio_hits=coarse.audio_hits)
+    seg = segment_signal(signal.t, signal.smoothed, signal.spread, signal.camera_motion, cfg,
+                         audio_hits=coarse.audio_hits)
     write_signal_plot(out_dir / "signal.png", signal, seg)
     progress.log(f"signal.png skriven ({len(seg.segments)} segment, {len(seg.rejected)} förkastade)")
     if not args.no_video:

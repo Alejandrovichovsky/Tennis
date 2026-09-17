@@ -48,6 +48,12 @@ def write_signal_plot(out_path: Path, signal: ActivitySignal, seg: SegmentationR
 
     polyline(signal.fg, (120, 120, 120))
     polyline(signal.speed, (200, 120, 60))
+    if signal.audio is not None:
+        polyline(signal.audio, (220, 80, 220))
+    if signal.audio_hits is not None:
+        for ht in signal.audio_hits:
+            xh = x_of(float(ht))
+            cv2.line(img, (xh, height - pad_b - 8), (xh, height - pad_b), (220, 80, 220), 1)
     polyline(signal.smoothed, (60, 220, 255), 2)
     cv2.line(img, (pad_l, y_of(seg.enter_threshold)), (width - 10, y_of(seg.enter_threshold)), (80, 200, 80), 1)
     cv2.line(img, (pad_l, y_of(seg.exit_threshold)), (width - 10, y_of(seg.exit_threshold)), (80, 80, 200), 1)
@@ -56,6 +62,8 @@ def write_signal_plot(out_path: Path, signal: ActivitySignal, seg: SegmentationR
     cv2.putText(img, "a(t)", (8, y_of(0.9)), font, 0.45, (60, 220, 255), 1, cv2.LINE_AA)
     cv2.putText(img, "speed", (8, y_of(0.8)), font, 0.45, (200, 120, 60), 1, cv2.LINE_AA)
     cv2.putText(img, "fg", (8, y_of(0.7)), font, 0.45, (120, 120, 120), 1, cv2.LINE_AA)
+    if signal.audio is not None:
+        cv2.putText(img, "audio", (8, y_of(0.6)), font, 0.45, (220, 80, 220), 1, cv2.LINE_AA)
     for m in range(0, int(t1) + 1, 60):
         x = x_of(float(m))
         cv2.line(img, (x, height - pad_b), (x, height - pad_b + 6), (140, 140, 140), 1)
@@ -85,7 +93,7 @@ def write_debug_video(
         cv2.rectangle(frame, (int(court.x0), int(court.y0)), (int(court.x1), int(court.y1)), (200, 200, 60), 1)
         cv2.line(frame, (int(court.x0), int(court.net_y)), (int(court.x1), int(court.net_y)), (60, 200, 200), 1)
         if obs is not None:
-            near, far = select_players(obs.blobs, court)
+            near, far = select_players(obs.blobs, court, cfg)
             for b, colour in ((near, (60, 60, 255)), (far, (255, 120, 60))):
                 if b is None:
                     continue

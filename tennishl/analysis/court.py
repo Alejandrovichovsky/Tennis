@@ -44,9 +44,15 @@ class CourtModel:
     def contains(self, x: float, y: float) -> bool:
         return self.x0 <= x <= self.x1 and self.y0 <= y <= self.y1
 
-    def side(self, y: float) -> int:
-        """-1 = far side (top of frame), +1 = near side."""
-        return 1 if y >= self.net_y else -1
+    def side(self, feet_y: float) -> int:
+        """-1 = far side (top of frame), +1 = near side.
+
+        Decide on the *feet* (bottom of the box), never the centroid: a tall
+        near player standing at the net has his centroid above the net line
+        while his feet are still on the near court. Feet are geometrically
+        unambiguous from a camera behind the baseline.
+        """
+        return 1 if feet_y >= self.net_y else -1
 
     def to_dict(self) -> dict:
         return {
@@ -67,19 +73,22 @@ def _smooth(hist: np.ndarray, k: int = 5) -> np.ndarray:
     return np.convolve(hist, kernel, mode="same")
 
 
-def find_net_line(centroid_ys: np.ndarray, y0: float, y1: float, bins: int = 48) -> tuple[float, float]:
+def find_net_line(feet_ys: np.ndarray, y0: float, y1: float, bins: int = 48,
+                  weights: np.ndarray | None = None) -> tuple[float, float]:
     """Return (net_y, confidence).
 
-    Two players seen from behind the baseline form two modes in the height
-    histogram. The valley between them is the net. If we only see one mode
+    Two players seen from behind the baseline form two modes in the
+    histogram of where feet touch the ground. The valley between them is
+    the net. ``weights`` lets small (far) blobs count as much as big (near)
+    ones even though they are detected less often. If we only see one mode
     (one player, or a doubles pile-up), confidence drops and we fall back to
     the middle of the ROI - which is roughly where a net is anyway.
     """
     fallback = (y0 + y1) / 2.0
-    if centroid_ys.size < 30:
+    if feet_ys.size < 30:
         return fallback, 0.0
 
-    hist, edges = np.histogram(centroid_ys, bins=bins, range=(y0, y1))
+    hist, edges = np.histogram(feet_ys, bins=bins, range=(y0, y1), weights=weights)
     hist = _smooth(hist.astype(np.float64), 5)
     if hist.max() <= 0:
         return fallback, 0.0
@@ -156,11 +165,23 @@ def estimate_court(
             roi_conf = 0.0
 
     x0, y0, x1, y1 = roi
-    ys_in_roi = np.array(
-        [b.cy for obs in observations for b in obs.blobs if x0 <= b.cx <= x1 and y0 <= b.cy <= y1],
-        dtype=np.float64,
+    frame_area = float(w * h)
+    feet: list[float] = []
+    weights: list[float] = []
+    for obs in observations:
+        for b in obs.blobs:
+            fy = b.cy + b.h / 2.0
+            if not (x0 <= b.cx <= x1 and y0 <= fy <= y1 + 0.05 * h):
+                continue
+            if b.area < cfg.player.min_area_frac_far * frame_area:
+                continue
+            feet.append(fy)
+            # Big blobs (near player, or the near player split into parts)
+            # would otherwise drown the far player's mode completely.
+            weights.append(1.0 if b.area < cfg.player.max_area_frac_far * frame_area else 0.35)
+    net_y, net_conf = find_net_line(
+        np.array(feet, dtype=np.float64), y0, y1, weights=np.array(weights, dtype=np.float64)
     )
-    net_y, net_conf = find_net_line(ys_in_roi, y0, y1)
 
     return CourtModel(
         x0=x0,

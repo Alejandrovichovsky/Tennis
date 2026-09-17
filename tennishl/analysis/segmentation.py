@@ -124,23 +124,72 @@ def _merge_close(
     return merged
 
 
+def _split_long(
+    intervals: list[tuple[int, int]], t: np.ndarray, a: np.ndarray, cfg: Config
+) -> list[tuple[int, int]]:
+    """Cut over-long intervals at their deepest interior activity valley.
+
+    On real footage two points sometimes never drop below the exit threshold
+    between them (the players jog to their positions and the next serve
+    follows at once). Throwing the whole stretch away loses both points;
+    splitting at the quietest moment recovers them. Recurses until every
+    part fits, and gives up (keeps the long interval, which the caller then
+    rejects) when the split would produce a piece shorter than a point.
+    """
+    max_len = cfg.segmentation.max_duration_s
+    min_len = cfg.segmentation.min_duration_s
+    out: list[tuple[int, int]] = []
+    stack = list(reversed(intervals))
+    while stack:
+        s, e = stack.pop()
+        if t[e] - t[s] <= max_len or e - s < 4:
+            out.append((s, e))
+            continue
+        # Search for the valley away from both ends so each half is a point.
+        lo = int(np.searchsorted(t, t[s] + min_len))
+        hi = int(np.searchsorted(t, t[e] - min_len))
+        if hi <= lo:
+            out.append((s, e))
+            continue
+        cut = lo + int(np.argmin(a[lo:hi]))
+        stack.append((cut + 1, e))  # processed after the left half
+        stack.append((s, cut))
+    out.sort()
+    return out
+
+
 def segment_signal(
     t: np.ndarray,
     activity: np.ndarray,
     spread: np.ndarray,
     camera_motion: np.ndarray,
     cfg: Config,
+    audio_hits: np.ndarray | None = None,
 ) -> SegmentationResult:
+    """``audio_hits``: racket-impact times, or None when the file is silent.
+
+    With audio, the "both players visible" gate becomes an *or*: a segment
+    passes if the far player was seen enough, or if the ball was heard. And
+    a segment nobody hit a ball in is rejected outright - that is the
+    ball-fetching walk that fools every purely visual detector.
+    """
     t = np.asarray(t, dtype=np.float64)
     activity = np.asarray(activity, dtype=np.float64)
     if t.size != activity.size:
         raise ValueError("t and activity must have the same length")
     if spread.size != t.size or camera_motion.size != t.size:
         raise ValueError("spread and camera_motion must match the signal length")
+    hits = None if audio_hits is None else np.sort(np.asarray(audio_hits, dtype=np.float64))
+
+    def n_hits(a: float, b: float) -> int:
+        if hits is None:
+            return 0
+        return int(np.searchsorted(hits, b, side="right") - np.searchsorted(hits, a, side="left"))
 
     enter, exit_ = compute_thresholds(activity, cfg)
     intervals = _raw_intervals(t, activity, enter, exit_, cfg.segmentation.min_gap_s)
     intervals = _merge_close(intervals, t, cfg.segmentation.merge_gap_s)
+    intervals = _split_long(intervals, t, activity, cfg)
 
     segments: list[Segment] = []
     rejected: list[Rejection] = []
@@ -158,11 +207,15 @@ def segment_signal(
             rejected.append(Rejection(start_s, end_s, "too_short", duration))
             continue
         if duration > cfg.segmentation.max_duration_s:
-            # Almost always warm-up hitting or a mis-merged stretch, not a
-            # 50-second point. Logged so it can be inspected.
+            # Could not be split into plausible points: warm-up hitting or
+            # continuous drilling. Logged so it can be inspected.
             rejected.append(Rejection(start_s, end_s, "too_long", duration))
             continue
-        if both < cfg.segmentation.require_both_sides_frac:
+        heard = n_hits(start_s, end_s)
+        if hits is not None and heard < cfg.audio.min_hits_per_segment:
+            rejected.append(Rejection(start_s, end_s, "no_ball_hits", float(heard)))
+            continue
+        if both < cfg.segmentation.require_both_sides_frac and hits is None:
             rejected.append(Rejection(start_s, end_s, "players_not_on_both_sides", both))
             continue
         if cam > cfg.segmentation.max_camera_motion:

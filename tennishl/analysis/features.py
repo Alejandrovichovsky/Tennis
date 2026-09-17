@@ -27,23 +27,26 @@ class PlayerTracks:
     near_y: np.ndarray
     far_x: np.ndarray
     far_y: np.ndarray
+    near_feet: np.ndarray
 
 
-def build_player_tracks(observations: list[FrameObservation], court: CourtModel) -> PlayerTracks:
+def build_player_tracks(observations: list[FrameObservation], court: CourtModel, cfg: Config | None = None) -> PlayerTracks:
     n = len(observations)
     t = np.zeros(n)
     nx = np.full(n, np.nan)
     ny = np.full(n, np.nan)
     fx = np.full(n, np.nan)
     fy = np.full(n, np.nan)
+    nfeet = np.full(n, np.nan)
     for i, obs in enumerate(observations):
         t[i] = obs.t
-        near, far = select_players(obs.blobs, court)
+        near, far = select_players(obs.blobs, court, cfg)
         if near is not None:
             nx[i], ny[i] = near.cx, near.cy
+            nfeet[i] = near.cy + near.h / 2.0
         if far is not None:
             fx[i], fy[i] = far.cx, far.cy
-    return PlayerTracks(t=t, near_x=nx, near_y=ny, far_x=fx, far_y=fy)
+    return PlayerTracks(t=t, near_x=nx, near_y=ny, far_x=fx, far_y=fy, near_feet=nfeet)
 
 
 def _window(t: np.ndarray, start_s: float, end_s: float) -> slice:
@@ -114,10 +117,19 @@ def extract_features(
         seg_speed = np.zeros(1)
 
     # --- Shot count -------------------------------------------------------
-    # Prefer the ball when we trust it; fall back to bursts of player motion.
+    # Best source first: audible impacts, then the ball track, then bursts
+    # of player motion. Audio wins because it is independent of perspective
+    # and counts the far player's shots, which the ball track often loses.
     shot_source = "activity"
     shots: float | None = None
-    if ball_track is not None and ball_track.confidence >= cfg.ball.min_confidence:
+    if signal.audio_hits is not None:
+        from .audio import hits_between
+
+        heard = hits_between(signal.audio_hits, segment.start_s, segment.end_s)
+        if heard >= 1:
+            shots = float(heard)
+            shot_source = "audio"
+    if shots is None and ball_track is not None and ball_track.confidence >= cfg.ball.min_confidence:
         shots = _shots_from_ball(ball_track, segment)
         if shots is not None:
             shot_source = "ball"
@@ -162,13 +174,14 @@ def extract_features(
     )
 
     # --- Net approach -----------------------------------------------------
-    def closest_to_net(ys: np.ndarray) -> float:
-        v = ys[~np.isnan(ys)]
-        if v.size == 0:
-            return 1.0
-        return float(np.min(np.abs(v - court.net_y)) / court.height)
-
-    nearest = min(closest_to_net(tracks.near_y[sl]), closest_to_net(tracks.far_y[sl]))
+    # Near player only, measured at the feet, as a fraction of the *near*
+    # half's on-screen depth. The far half is squashed to a few pixels by
+    # perspective, so any far-player distance to the net line is meaningless
+    # (and the far player's centroid always sits "at the net").
+    near_feet = tracks.near_feet[sl]
+    v = near_feet[~np.isnan(near_feet)]
+    near_half = max(1.0, court.y1 - court.net_y)
+    nearest = float(np.min(np.abs(v - court.net_y)) / near_half) if v.size else 1.0
     net_approach = float(np.clip(1.0 - nearest / max(1e-6, cfg.scoring.net_play_depth_frac), 0.0, 1.0))
 
     return RallyFeatures(

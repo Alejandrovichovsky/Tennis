@@ -1,7 +1,36 @@
 # Referens: TennisCut
 
-Källa: App Store-/Google Play-beskrivningar och recensioner (tenniscut.com
-själv går inte att nå från utvecklingsmiljön). Fyll på när ni provat appen.
+Källor: TennisCuts promovideo (youtu.be/GlL6XyTbhLA, 1:25), App Store-/
+Google Play-texter och recensioner. tenniscut.com går inte att nå från
+utvecklingsmiljön.
+
+## Vad promon visar, bild för bild
+
+| Tid | Skärm | Vad det betyder för oss |
+|-----|-------|-------------------------|
+| 0:26 | Stativ i hörnet bakom baslinjen, hela banan i bild, grus, sol | samma uppställning som vi antar |
+| 0:37 | "Recording in Progress 00:02:07" i appen | inspelning i appen, med räknare |
+| 0:58 | Uppspelning med "0.5x Speed"-knapp | slow motion-uppspelning, inte en overlay |
+| 0:64 | "Date Filter", kalender | bibliotek filtrerat på datum |
+| 0:67 | Hem: flikarna All / **Matches / Serve Practice / Rally / Ball...** | kategorierna är *sessionstyper*, inte per-klipp-etiketter |
+| 0:70 | **"Video Insights": lista "Point 25, 3:06 - 3:27, 0:21", "Point 22, 2:39 - 2:57, 0:18", ...** sorterad på längd | det är hela deras "insight": poäng rankade efter längd, med tidsstämplar |
+| 0:79 | "Trim Video" med handtag, Start/Duration/End, Export | manuell finjustering av ett klipps gränser |
+| 0:82 | "Success! Saved to gallery", Share | export till Bilder + dela |
+
+Tre saker att ta med:
+
+1. **Ranking = längd.** "Video Insights" är en lista över poäng sorterad på
+   varaktighet. Vår score väger längd 22 %. Ett läge "sortera på längd" är
+   trivialt och bör finnas som default i listan, med vår score som
+   alternativ sortering.
+2. **Kategorier är per session**, inte per poäng: Match, Serveträning,
+   Rally, Boll(maskin?). Våra per-poäng-etiketter (serve, vinnande slag...)
+   har ingen motsvarighet hos dem. Behåll, men gör dem mindre framträdande.
+3. **Trim-handtag per klipp** är den enda manuella redigering de erbjuder.
+   Vi har det via `selection.json` (start_s/end_s) men inte i UI:t. Bör in
+   på tidslinjen.
+
+Ingen bollbana syns i promon trots att den marknadsförs i Pro.
 
 ## Vad TennisCut gör
 

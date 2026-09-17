@@ -130,7 +130,7 @@ function renderJob() {
       <div>
         <video id="video" controls preload="metadata" ${job.source_url ? `src="${job.source_url}"` : ""}></video>
         <canvas class="timeline" id="tl"></canvas>
-        <div class="legend"><span><i style="background:var(--accent)"></i>a(t)</span><span><i style="background:var(--green)"></i>poäng</span>
+        <div class="legend"><span><i style="background:var(--accent)"></i>a(t)</span><span><i style="background:#dc50dc"></i>bollslag (ljud)</span><span><i style="background:var(--green)"></i>poäng</span>
           <span><i style="background:var(--blue)"></i>förkastat</span><span><i style="background:var(--orange)"></i>facit</span>
           <span class="muted">klicka för att hoppa</span></div>
         <div class="panel" style="margin-top:12px">
@@ -227,7 +227,7 @@ function cardHtml(h) {
       <div class="title">#${h.rank} · ${fmt(h.clip_start_s)}–${fmt(h.clip_end_s)} · ${h.clip_duration_s.toFixed(1)} s · score ${h.score.toFixed(2)}
         ${h.clip_url ? `<a href="${h.clip_url}" target="_blank" style="margin-left:8px;font-weight:400">klipp</a>` : ""}</div>
       <div>${cats}</div>
-      <div class="why">${f.duration_s.toFixed(1)} s, ~${f.shot_count.toFixed(0)} slag (${f.shot_source === "ball" ? "bollspår" : "rörelse"}). ${top.length ? "Valdes på grund av " + top.join(" och ") + "." : ""} ${trail}.</div>
+      <div class="why">${f.duration_s.toFixed(1)} s, ~${f.shot_count.toFixed(0)} slag (${({ ball: "bollspår", audio: "ljud", activity: "rörelse" })[f.shot_source] || f.shot_source}). ${top.length ? "Valdes på grund av " + top.join(" och ") + "." : ""} ${trail}.</div>
       <div class="nums">tempo ${f.mean_intensity.toFixed(2)} · täckning ${f.coverage.toFixed(2)} · avslut ${f.finish.toFixed(2)} · serve ${f.serve_onset.toFixed(2)} · nät ${f.net_approach.toFixed(2)}</div>
     </div></div>`;
 }
@@ -281,6 +281,10 @@ function drawTimeline() {
   for (const p of truth) { ctx.fillStyle = "rgba(255,159,67,.8)"; ctx.fillRect(x(p.start_s), H - bandH, Math.max(2, x(p.end_s) - x(p.start_s)), bandH); }
   if (pendingIn !== null) { ctx.fillStyle = "rgba(255,159,67,.5)"; ctx.fillRect(x(pendingIn), H - bandH, 2 * devicePixelRatio, bandH); }
   const sig = a.signal;
+  if (a.audio && a.audio.hits) {
+    ctx.fillStyle = "rgba(220,80,220,.8)";
+    for (const ht of a.audio.hits) ctx.fillRect(x(ht), H - bandH - 6 * devicePixelRatio, devicePixelRatio, 6 * devicePixelRatio);
+  }
   ctx.strokeStyle = "#d8ff3a"; ctx.lineWidth = 1.5 * devicePixelRatio; ctx.beginPath();
   sig.t.forEach((t, i) => { const y = H - bandH - sig.activity[i] * (H - bandH - 4); i ? ctx.lineTo(x(t), y) : ctx.moveTo(x(t), y); });
   ctx.stroke();

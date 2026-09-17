@@ -19,6 +19,27 @@ def test_net_line_sits_in_the_valley_between_two_players():
     assert conf > 0.8
 
 
+def test_net_line_weights_let_a_rarely_seen_far_player_count():
+    rng = np.random.default_rng(0)
+    near = rng.normal(220, 6, 900)      # detected all the time
+    far = rng.normal(90, 4, 60)         # small, seen 15x less often
+    ys = np.concatenate([near, far])
+    w = np.concatenate([np.full(900, 0.35), np.full(60, 1.0)])
+    net_y, conf = find_net_line(ys, 0.0, 270.0, weights=w)
+    assert 100 < net_y < 200
+    assert conf > 0.5
+
+
+def test_side_is_decided_by_feet_not_centroid():
+    court = CourtModel(x0=0, y0=0, x1=480, y1=270, net_y=100, proxy_size=(480, 270), confidence=1.0)
+    # A tall near player at the net: centroid above the line, feet below it.
+    tall_at_net = Blob(cx=240, cy=90, w=30, h=80, area=2000)
+    far_small = Blob(cx=300, cy=70, w=6, h=16, area=80)
+    near, far = select_players([tall_at_net, far_small], court)
+    assert near is tall_at_net
+    assert far is far_small
+
+
 def test_net_line_falls_back_with_one_player():
     ys = np.random.default_rng(1).normal(200, 5, 300)
     net_y, conf = find_net_line(ys, 0.0, 270.0)
@@ -45,7 +66,7 @@ def make_observations(n: int, dt: float, *, near_speed_px: float, far_speed_px: 
 def test_select_players_one_per_side():
     court = CourtModel(x0=0, y0=0, x1=480, y1=270, net_y=130, proxy_size=(480, 270), confidence=1.0)
     blobs = [Blob(100, 200, 20, 60, 900), Blob(300, 210, 25, 70, 1500), Blob(240, 50, 10, 30, 200),
-             Blob(470, 265, 5, 5, 25)]
+             Blob(470, 265, 5, 5, 25), Blob(200, 40, 40, 100, 4000)]  # last: too big to be far
     near, far = select_players(blobs, court)
     assert near is not None and near.area == 1500
     assert far is not None and far.cy == 50

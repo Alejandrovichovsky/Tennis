@@ -33,12 +33,18 @@ class ProxyConfig:
 class PlayerConfig:
     """Player blob detection on the foreground mask."""
 
-    # Areas as a fraction of proxy frame area. A player at 480px wide from a
-    # tripod behind the baseline is roughly 0.1%-3% of the frame.
-    min_area_frac: float = 0.0006
+    # Areas as a fraction of proxy frame area. Perspective is brutal from
+    # behind the baseline: the near player is 0.5-3% of the frame, the far
+    # player 0.01-0.1% (about 14x5 px at 480 wide). The coarse pass keeps
+    # everything above ``min_area_frac``; the per-side floors are applied
+    # once we know which side of the net a blob stands on.
+    min_area_frac: float = 0.00008
+    min_area_frac_near: float = 0.0006
+    min_area_frac_far: float = 0.00008
     max_area_frac: float = 0.06
+    max_area_frac_far: float = 0.012  # the near player's torso must not pass as "far"
     min_aspect: float = 0.7          # height/width; people are tall-ish
-    max_blobs_per_frame: int = 12    # cap bookkeeping on noisy frames
+    max_blobs_per_frame: int = 16    # cap bookkeeping on noisy frames
     match_max_dist_frac: float = 0.12  # frame-height fraction for frame-to-frame matching
 
 
@@ -52,12 +58,24 @@ class CourtConfig:
 
 
 @dataclass
+class AudioConfig:
+    """Ball-hit detection from the soundtrack (see analysis/audio.py)."""
+
+    enabled: bool = True
+    sensitivity: float = 7.0        # robust sigmas above the positive-onset floor
+    min_hit_spacing_s: float = 0.22  # two hits closer than this are one
+    density_window_s: float = 1.5   # +- window for hits/s in a(t)
+    min_hits_per_segment: int = 1   # with audio, a "rally" without a hit is not one
+
+
+@dataclass
 class ActivityConfig:
     """Weights for the scalar activity signal a(t)."""
 
-    w_foreground: float = 0.35
-    w_player_speed: float = 0.45
-    w_spread: float = 0.20
+    w_foreground: float = 0.25
+    w_player_speed: float = 0.35
+    w_spread: float = 0.10
+    w_audio: float = 0.30           # used only when the file has audio
     smooth_seconds: float = 0.8
     norm_low_pct: float = 20.0
     norm_high_pct: float = 92.0
@@ -71,9 +89,15 @@ class SegmentationConfig:
     exit_frac: float = 0.32    # -> end a rally (lower = hysteresis)
     min_duration_s: float = 2.5
     max_duration_s: float = 45.0
-    merge_gap_s: float = 1.2   # bridge short dropouts inside one rally
+    # Bridge dropouts inside one point, and pull the pre-serve ball bounces
+    # into the point that follows. Real points are never closer than ~5 s
+    # (a second serve after a fault is the tightest case), so 2.5 s is safe.
+    merge_gap_s: float = 2.5
     min_gap_s: float = 0.6     # dwell time below exit before we close a rally
-    require_both_sides_frac: float = 0.45  # share of frames with players on both sides
+    # Share of frames with players on both sides. Weak on real footage (the
+    # far player is a few pixels wide), so with audio present a segment
+    # passes if it has *either* this or enough ball hits.
+    require_both_sides_frac: float = 0.45
     max_camera_motion: float = 0.35        # drop segments where the phone was moved
 
 
@@ -119,7 +143,7 @@ class ScoringConfig:
     fast_exchange_shot_rate: float = 1.4   # shots per second
     winner_finish_score: float = 0.62
     serve_onset_score: float = 0.6
-    net_play_depth_frac: float = 0.22      # distance to net line, frame-height fraction
+    net_play_depth_frac: float = 0.35      # near player's feet within this fraction of the near half's depth
 
 
 @dataclass
@@ -144,6 +168,7 @@ class ClipConfig:
 @dataclass
 class Config:
     proxy: ProxyConfig = field(default_factory=ProxyConfig)
+    audio: AudioConfig = field(default_factory=AudioConfig)
     player: PlayerConfig = field(default_factory=PlayerConfig)
     court: CourtConfig = field(default_factory=CourtConfig)
     activity: ActivityConfig = field(default_factory=ActivityConfig)

@@ -28,6 +28,8 @@ class CoarseResult:
     motion_map: np.ndarray       # float32, accumulated foreground hits
     proxy_size: tuple[int, int]  # (width, height) of the coarse proxy
     sample_fps: float
+    audio_hits: Optional[np.ndarray] = None   # seconds; None = no audio track
+    audio_threshold: float = 0.0
 
 
 def _open_kernel() -> np.ndarray:
@@ -129,9 +131,23 @@ def run_coarse_pass(
     if progress and total:
         progress(total, total)
 
-    return CoarseResult(
+    result = CoarseResult(
         observations=observations,
         motion_map=motion_map,
         proxy_size=(proxy_w, proxy_h),
         sample_fps=cfg.proxy.coarse_fps,
     )
+
+    if cfg.audio.enabled:
+        # Audio must never take the visual pipeline down: a file without a
+        # track, or a codec ffmpeg cannot read, simply means "no audio".
+        try:
+            from .audio import detect_hits
+
+            hits = detect_hits(info.path, cfg, max_seconds=max_seconds)
+            if hits is not None:
+                result.audio_hits = hits.times
+                result.audio_threshold = hits.threshold
+        except Exception:
+            result.audio_hits = None
+    return result

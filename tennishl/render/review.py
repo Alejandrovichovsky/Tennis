@@ -41,7 +41,8 @@ def describe_highlight(h: Highlight, min_ball_confidence: float) -> str:
         "serve": "en tydlig servestart",
     }
     why = " och ".join(reasons.get(k, k) for k, v in top if v > 0) or "helheten"
-    shots = f"~{f.shot_count:.0f} slag" + (" (bollspår)" if f.shot_source == "ball" else " (rörelse)")
+    source = {"ball": "bollspår", "audio": "ljud", "activity": "rörelse"}.get(f.shot_source, f.shot_source)
+    shots = f"~{f.shot_count:.0f} slag ({source})"
     trail = (
         f"bollspår {h.ball_track.confidence:.2f}"
         if h.ball_track and h.ball_track.confidence >= min_ball_confidence
