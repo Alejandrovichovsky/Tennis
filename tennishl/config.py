@@ -24,8 +24,9 @@ class ProxyConfig:
     coarse_fps: float = 10.0
 
     # Fine pass: ball tracking inside rally windows only. Needs more pixels
-    # because a tennis ball at 480px wide is ~3px across.
-    ball_width: int = 960
+    # because a tennis ball at 480px wide is ~3px across. Measured on real
+    # 1080p footage: 960 finds a candidate in 73% of frames, 1280 in 90%.
+    ball_width: int = 1280
     ball_fps: float = 0.0  # 0 => native fps (ball needs every frame)
 
 
@@ -118,13 +119,27 @@ class BallConfig:
     player_exclusion_pad: int = 6     # px around player boxes we ignore
     max_candidates_per_frame: int = 24
 
+    # All pixel values below are expressed at ``reference_width`` and scaled
+    # automatically to whatever ``proxy.ball_width`` is in use, so changing
+    # the analysis resolution never invalidates a tuning file.
+    reference_width: int = 960
+
     max_speed_px_per_frame: float = 55.0  # gating for linking
-    max_gap_frames: int = 3               # allow short occlusions
+    max_gap_frames: int = 6               # allow short occlusions (0.2 s at 30 fps)
     min_track_points: int = 6
     full_length_points: int = 20          # chain length that counts as "long"
-    accel_tolerance_px: float = 6.0       # residual of local quadratic fit; a
-                                          # real flight sits at ~0.5-3 px
-    min_confidence: float = 0.65          # below this we do NOT draw a trail
+    accel_tolerance_px: float = 6.0       # softness of the smoothness score
+    # Hard gate. Measured on real footage: a flying ball fits a local
+    # quadratic to 0.09-0.30 px, a chain crawling along a body to 1.1-6.0.
+    max_rms_px: float = 0.9
+    max_on_player_frac: float = 0.4       # more than this and it IS the player
+
+    # Joining two chains across a lost stretch (see stitch_tracks).
+    join_max_gap_s: float = 0.6
+    join_hit_margin_s: float = 0.08       # a hit this close to the gap blocks a join
+    join_tolerance_px: float = 45.0       # how far off the prediction may be
+
+    min_confidence: float = 0.6           # below this we do NOT draw a trail
     trail_seconds: float = 0.45
 
 

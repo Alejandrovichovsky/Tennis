@@ -154,17 +154,37 @@ påverkas.
 - **Kandidater:** `min(|f_t − f_{t−1}|, |f_{t+1} − f_t|)` behåller bara det
   som rörde sig *in* till en position och sedan *ut*. Statisk bakgrund ger
   noll, en långsam spelare ger en tunn kontur, en boll ger en kompakt blob.
-  Filter på area, aspect, fyllnadsgrad och spelarboxar (från grovpasset).
-- **Länkning:** kedjor med konstant-hastighets-prediktor, upp till 3 bilders
-  lucka. Girigt, en kedja i taget.
-- **Confidence:** 0.4·längd + 0.4·exp(−residual/6 px) + 0.2·täckning, där
-  residualen är RMS från lokala kvadratiska anpassningar. En boll följer
-  fysik; ett flimmer på staketet gör det inte.
-- **Stitching:** alla kedjor över tröskeln i tidsordning, överlapp trimmas,
-  luckor förblir luckor. Vi interpolerar aldrig över en kedjegräns.
+  Filter på area, aspect och fyllnadsgrad. Kandidater som överlappar en
+  spelarbox **flaggas, kastas inte** — att kasta dem kostade två tredjedelar
+  av alla detektioner på riktig film, eftersom bollen ofta är framför eller
+  bakom en spelare sett från kameran.
+- **Länkning:** kedjor med konstant-hastighets-prediktor, upp till 6 bilders
+  lucka. Girigt, en kedja i taget. En kedja får aldrig *starta* på en
+  spelare och får inte bestå av mer än 40 % sådana punkter — det håller
+  kroppar borta utan att hindra bollen från att flyga förbi en.
+- **Residualen som hård grind.** Detta är det som skiljer boll från kropp.
+  Mätt på riktig film: en flygande boll anpassar sig till en lokal
+  andragradskurva med 0,09–0,30 px, en kedja längs en kropp med 1,1–6,0.
+  En storleksordning isär, så ett fast tak (0,9 px vid 960) separerar dem
+  rent — och först när den grinden finns vågar man höja upplösningen och
+  släppa på maskningen.
+- **Confidence:** 0.40·längd + 0.35·exp(−residual/6 px) + 0.25·täckning.
+  Allt som når hit har redan passerat residualtaket, så jämnheten behöver
+  inte längre bära boll-mot-kropp-beslutet.
+- **Stitching:** alla kedjor över tröskeln i tidsordning, överlapp trimmas.
+  En lucka sys ihop bara om bollens egen parabel förklarar hålet
+  (kvadratisk extrapolation — linjär missar med ~100 px över 0,3 s eftersom
+  gravitationen böjer banan). Finns ljudspår är ett hört racketslag i
+  luckan ett veto: då är det en riktig riktningsändring, inte ett tappat
+  spår. Prediktionstestet står på egna ben, så bryggningen fungerar även
+  på ljudlös film.
 
-Spår ritas bara om confidence ≥ 0.55. Under det står det "inget bollspår" i
+Spår ritas bara om confidence ≥ 0.6. Under det står det "inget bollspår" i
 rapporten tillsammans med den faktiska siffran.
+
+Alla px-trösklar uttrycks vid referensbredden 960 och skalas automatiskt
+till den `ball_width` som används, så upplösningen kan ändras utan att
+någon annan siffra behöver röras.
 
 ### 9. Klippning (`render/`)
 

@@ -96,6 +96,59 @@ men inte spel.
 
 ![Bollkedjor i ett rally](img/ball_chains_real.jpg)
 
+### Körning 5: bollspårets konsistens
+
+Klagomål efter granskning av klippen: spåret tappas ofta. Mätt på ett
+23-sekundersrally, per bildruta:
+
+| | frames med kandidat | frames täckta av behållna kedjor |
+|---|---|---|
+| med spelarmask (körning 4) | 25 % | 13 % |
+| utan spelarmask | 73 % | 19 % |
+
+**Maskningen från körning 4 åt upp två tredjedelar av bollen.** Bollen är
+framför, bakom eller bredvid en spelare sett från kameran under stora
+delar av ett rally. Men att bara ta bort masken ger kroppsspårning igen.
+
+Upplösningssvep på samma fönster (täckning / andel punkter på spelare / rms):
+
+| | kandidater | kedjor | täckning | på spelare | rms |
+|---|---|---|---|---|---|
+| mask, 960 | 25 % | 7 | 13 % | 0 % | 0.16 |
+| fri, 960 | 73 % | 8 | 19 % | 33 % | 1.06 |
+| fri, 1280 | 90 % | 21 | 55 % | 61 % | 3.03 |
+| fri, 1920 | 98 % | 41 | 94 % | 78 % | 6.05 |
+
+94 % täckning vid 1920 är falsk: vi spårar kroppar. Men tabellen innehåller
+lösningen. **En flygande boll anpassar sig till en lokal andragradskurva
+med 0,09-0,30 px residual; en kedja längs en kropp ligger på 1,1-6,0.**
+En hel storleksordning isär, alltså räcker ett fast tak för att separera
+dem, och då vågar vi släppa på både masken och upplösningen.
+
+Ändringar:
+- Kandidater på spelare **flaggas** i stället för att kastas. En kedja får
+  aldrig *starta* på en spelare och får inte bestå av mer än 40 % sådana
+  punkter, men bollen får flyga förbi en kropp.
+- `max_rms_px` som hård grind (0,9 px vid 960), inte bara en mjuk vikt.
+- Bollpasset till 1280 px. Alla px-trösklar uttrycks vid referensbredd 960
+  och skalas automatiskt, så upplösningen kan ändras utan att röra resten.
+- Luckor i spåret sys ihop när bollens egen parabel förklarar hålet.
+  Första försöket extrapolerade linjärt och missade med ~100 px över
+  0,3 s (gravitationen böjer banan) - ett testfall fångade det.
+  Kvadratisk extrapolation i stället. Ljudet är en andra, oberoende spärr:
+  hörs ett racket i luckan är det en riktig riktningsändring.
+
+Resultat på tre rallyn: täckningen gick från 13 % till 26 %, och de flesta
+kvarvarande luckor innehåller ljudslag, alltså legitima riktningsändringar.
+
+**Fysisk gräns, hittad på köpet.** En lucka på 6,6 s med 7 slag i visade
+sig vara ett parti där bollen spelas högt mot ljusgrå himmel och trädkanten.
+98 % av rutorna där har kandidater, men bara 38 % har någon *utanför* en
+spelarbox: bollen syns helt enkelt inte mot den fonden. Ingen justering av
+trösklar hjälper - ett svep på `diff_threshold` (14/10/7/5) var rent brus.
+Det kräver en detektor som känner igen bollen på utseende, inte bara på
+rörelse (TrackNet-liknande nät), eller en kamera med kortare slutartid.
+
 ### Kvar att verifiera
 
 - Ett komplett facit. Ljud-rallyn är en andra åsikt, inte sanning.

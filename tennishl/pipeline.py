@@ -192,13 +192,18 @@ def _track_balls(info, coarse, court, signal, tracks, highlights, cfg, progress)
     if not chosen:
         return
     progress.stage("Spårar bollen")
-    ball_scale = cfg.proxy.ball_width / float(coarse.proxy_size[0]) if info.width > cfg.proxy.ball_width else info.width / float(coarse.proxy_size[0])
+    # Coarse-pass boxes are in coarse-proxy pixels; the ball pass runs at a
+    # different width (and never upscales past the source).
+    ball_proxy_w = min(cfg.proxy.ball_width, info.width)
+    ball_scale = ball_proxy_w / float(coarse.proxy_size[0])
     excl = _exclusion_boxes(coarse.observations, court, ball_scale, cfg)
+    audio_hits = signal.audio_hits
     for i, h in enumerate(chosen):
         window = [(t, b) for t, b in excl if h.segment.start_s - 1 <= t <= h.segment.end_s + 1]
         try:
             track = track_ball_in_window(
-                info, h.segment.start_s, h.segment.end_s, cfg, exclusion_boxes_by_time=window
+                info, h.segment.start_s, h.segment.end_s, cfg,
+                exclusion_boxes_by_time=window, audio_hits=audio_hits,
             )
         except Exception as exc:  # the ball module must never take the pipeline down
             progress.log(f"  bollspårning misslyckades för {h.id}: {exc}")
