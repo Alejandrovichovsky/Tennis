@@ -1,5 +1,9 @@
 # Skaffa riktig film
 
+**Filmar du själv?** Läs `FILMING.md` i stället — kamerainställningarna
+avgör mer än något vi kan göra i koden efteråt.
+
+
 Utvecklingsmiljön där koden skrivs når bara GitHub och PyPI. YouTube,
 tenniscut.com, arkiv och stock-sajter är blockerade på nätverksnivå. Så
 filmen måste hämtas på en vanlig dator och läggas där pipelinen kan nå den.
