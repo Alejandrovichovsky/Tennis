@@ -166,6 +166,18 @@ def compute_activity(
     if total_w > 0:
         raw = raw / total_w
 
+    if n_audio is not None:
+        # Independent evidence for the same thing should combine as OR, not
+        # as an average. A weighted mean lets a silent channel veto a loud
+        # one: with audio at weight 0.30, even unmistakable hitting at one
+        # impact per second could reach only 0.30 on its own, below any
+        # sane threshold. Measured on real footage, six rallies with audio
+        # evidence 0.65-1.00 were lost that way because the players were
+        # far from the camera and barely registered as foreground.
+        # Racket impacts at rally cadence are the most reliable evidence we
+        # have, so let them carry a segment alone.
+        raw = np.maximum(raw, n_audio)
+
     window = max(1, int(round(cfg.activity.smooth_seconds / sample_dt)))
     smoothed = moving_average(raw, window)
 
