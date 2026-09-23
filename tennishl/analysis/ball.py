@@ -289,25 +289,38 @@ def _to_track(
     return BallTrack(points=out, confidence=confidence, rms_residual_px=rms)
 
 
-def scaled_config(cfg: Config, proxy_w: int) -> Config:
-    """Rescale the pixel-valued ball thresholds to the proxy actually used.
+def scaled_config(cfg: Config, proxy_w: int, fps: float | None = None) -> Config:
+    """Rescale the ball thresholds to the proxy and frame rate actually used.
 
-    Areas scale with the square of the linear factor, everything else
-    linearly. This is what lets ``proxy.ball_width`` be tuned freely without
-    touching any other number.
+    Two independent rescalings, so neither resolution nor frame rate has to
+    be baked into a tuning file:
+
+    * **Pixels** scale with proxy width - areas with its square, the rest
+      linearly.
+    * **Frame counts** scale with frame rate. At 60 fps the ball travels
+      half as far between frames, so the speed gate halves; and a given
+      number of frames spans half the time, so gap and length counts
+      double. Without this, 60 fps footage is judged by gates meant for
+      30 fps and the linker either over-reaches or gives up too early.
     """
     s = proxy_w / float(cfg.ball.reference_width)
-    if abs(s - 1.0) < 1e-6:
+    f = 1.0 if not fps else fps / float(cfg.ball.reference_fps)
+    if abs(s - 1.0) < 1e-6 and abs(f - 1.0) < 1e-6:
         return cfg
     ball = replace(
         cfg.ball,
         min_area_px=cfg.ball.min_area_px * s * s,
         max_area_px=cfg.ball.max_area_px * s * s,
         player_exclusion_pad=int(round(cfg.ball.player_exclusion_pad * s)),
-        max_speed_px_per_frame=cfg.ball.max_speed_px_per_frame * s,
+        # px per frame: more pixels across, but fewer px travelled per frame
+        max_speed_px_per_frame=cfg.ball.max_speed_px_per_frame * s / f,
         accel_tolerance_px=cfg.ball.accel_tolerance_px * s,
         max_rms_px=cfg.ball.max_rms_px * s,
         join_tolerance_px=cfg.ball.join_tolerance_px * s,
+        # frame counts: same wall-clock span needs proportionally more frames
+        max_gap_frames=max(1, int(round(cfg.ball.max_gap_frames * f))),
+        min_track_points=max(4, int(round(cfg.ball.min_track_points * f))),
+        full_length_points=max(6, int(round(cfg.ball.full_length_points * f))),
     )
     return replace(cfg, ball=ball)
 
@@ -340,7 +353,7 @@ def track_ball_in_window(
     scale = proxy_scale(info, cfg.proxy.ball_width)
     proxy_w = max(2, int(round(info.width * scale)))
     proxy_h = max(2, int(round(info.height * scale)))
-    cfg = scaled_config(cfg, proxy_w)
+    cfg = scaled_config(cfg, proxy_w, info.fps)
 
     frames: list[np.ndarray] = []
     times: list[float] = []

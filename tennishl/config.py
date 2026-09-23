@@ -127,6 +127,11 @@ class BallConfig:
     # automatically to whatever ``proxy.ball_width`` is in use, so changing
     # the analysis resolution never invalidates a tuning file.
     reference_width: int = 960
+    # Frame-counting thresholds below are declared at this frame rate and
+    # rescaled to the clip's own, so 60 fps footage is not silently held to
+    # gates meant for 30 fps: the ball moves half as far between frames,
+    # and the same number of frames covers half the time.
+    reference_fps: float = 30.0
 
     max_speed_px_per_frame: float = 55.0  # gating for linking
     max_gap_frames: int = 6               # allow short occlusions (0.2 s at 30 fps)

@@ -154,3 +154,25 @@ def test_gap_longer_than_the_limit_is_never_joined():
     track = stitch_tracks(tracks, cfg, proxy_w=1280, proxy_h=720, fps=30.0, audio_hits=None)
     ts = np.array([p.t for p in track.points])
     assert max(np.diff(ts)) > cfg.ball.join_max_gap_s
+
+
+def test_frame_counts_scale_with_frame_rate():
+    """60 fps footage must not be judged by gates meant for 30 fps."""
+    cfg = Config()
+    fast = scaled_config(cfg, cfg.ball.reference_width, 60.0)
+    # The ball covers half the distance between frames.
+    assert fast.ball.max_speed_px_per_frame == cfg.ball.max_speed_px_per_frame / 2
+    # The same wall-clock span needs twice the frames.
+    assert fast.ball.max_gap_frames == cfg.ball.max_gap_frames * 2
+    assert fast.ball.min_track_points == cfg.ball.min_track_points * 2
+    assert fast.ball.full_length_points == cfg.ball.full_length_points * 2
+    # Pixel thresholds are untouched by frame rate.
+    assert fast.ball.max_rms_px == cfg.ball.max_rms_px
+
+
+def test_resolution_and_frame_rate_compose():
+    cfg = Config()
+    both = scaled_config(cfg, 1920, 60.0)
+    assert both.ball.max_speed_px_per_frame == cfg.ball.max_speed_px_per_frame * 2 / 2
+    assert both.ball.max_rms_px == cfg.ball.max_rms_px * 2
+    assert both.ball.max_gap_frames == cfg.ball.max_gap_frames * 2
