@@ -28,3 +28,28 @@ def test_hits_override_missing_far_player():
     without = segment_signal(t, a, spread, cam, cfg, audio_hits=None)
     assert len(with_audio.segments) == 1
     assert without.segments == [] and without.rejected[0].reason == "players_not_on_both_sides"
+
+
+def test_segment_end_is_trimmed_to_the_last_hit():
+    """The point is over when the last ball was struck, not when the
+    players have finished jogging back."""
+    cfg = Config()
+    t, a, spread, cam = make_signal(40.0, [(5.0, 25.0)])
+    hits = np.array([6.0, 8.0, 10.0, 12.0])  # rally really ends at 12 s
+    res = segment_signal(t, a, spread, cam, cfg, audio_hits=hits)
+    assert len(res.segments) == 1
+    end = res.segments[0].end_s
+    assert abs(end - (12.0 + cfg.segmentation.tail_after_last_hit_s)) < 0.3, end
+
+
+def test_trim_never_deletes_a_segment():
+    """Trimming refines where a point ended; it must not decide whether
+    the point happened. A single early hit used to shorten segments below
+    min_duration and silently drop them."""
+    cfg = Config()
+    t, a, spread, cam = make_signal(40.0, [(5.0, 11.0)])
+    hits = np.array([5.5])  # one hit right at the start
+    res = segment_signal(t, a, spread, cam, cfg, audio_hits=hits)
+    assert len(res.segments) == 1
+    seg = res.segments[0]
+    assert seg.duration_s >= cfg.segmentation.min_duration_s

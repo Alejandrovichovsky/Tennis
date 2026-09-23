@@ -198,6 +198,22 @@ def segment_signal(
         e = max(s, e)
         start_s = float(t[s])
         end_s = float(t[e])
+        if hits is not None:
+            # Cut the jog-back off the end. Post-roll then adds the
+            # aftermath deliberately instead of by accident.
+            inside = hits[(hits >= start_s) & (hits <= end_s)]
+            if inside.size:
+                # Never let the trim shorten a segment out of existence:
+                # it refines where the point *ended*, it does not decide
+                # whether the point happened. Without this floor, six real
+                # detections fell below min_duration and vanished.
+                trimmed = max(
+                    float(inside[-1]) + cfg.segmentation.tail_after_last_hit_s,
+                    start_s + cfg.segmentation.min_duration_s,
+                )
+                if trimmed < end_s:
+                    end_s = trimmed
+                    e = max(s, int(np.searchsorted(t, end_s, side="right")) - 1)
         duration = end_s - start_s
         window = activity[s : e + 1]
         both = float(np.mean(spread[s : e + 1])) if e >= s else 0.0

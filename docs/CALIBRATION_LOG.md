@@ -163,3 +163,33 @@ rörelse (TrackNet-liknande nät), eller en kamera med kortare slutartid.
 ## Film 2: GlL6XyTbhLA (TennisCut-promo, 1:25)
 
 Inte en match. Använd för UI-referens, se REFERENCE_VIDEO.md.
+
+### Körning 6: två mätfel, inga tröskelfel
+
+Båda de kvarvarande punkterna på listan visade sig vara fel i *hur* vi
+mätte, inte i var trösklarna låg.
+
+**Nätspel sattes på 12 av 35 poäng.** Fördelningen av `net_approach` var
+tvåtoppig — 15 poäng på exakt 0,0, sedan ett hopp till 0,55–0,99 — så
+tröskeln 0,5 låg i tomrummet och var alltså rätt. Orsaken var att vi tog
+*närmaste bildruta*. Bakgrundsmodellen delar ibland närspelaren så att
+bara överkroppen detekteras, och då hamnar "fötterna" mitt på banan. En
+enda sådan ruta räckte för att etikettera en grundslagsduell som nätspel.
+Nu används tionde percentilen: hur nära han kom *konsekvent*. Etiketten
+föll till 1 av 36.
+
+**Segmenten slutade i median 1,9 s efter sista hörbara slaget**, med
+utstickare upp till 7,5 s — spelarna joggar tillbaka medan aktiviteten
+faller långsamt. Nu kapas slutet vid sista slaget + 0,8 s, och `post_roll`
+lägger på eftersnacket medvetet i stället för av misstag. Svansen blev
+0,8 s median, 1,8 s max.
+
+Första versionen av kapningen **raderade sex poäng**: den kortade
+segmenten under `min_duration_s` så att de förkastades som `too_short`.
+Alla sex hade exakt ett hört slag, så de var sannolikt servefel snarare
+än poäng — men de försvann av fel anledning. Kapningen är en förfining av
+slutpunkten och ska inte avgöra om en poäng existerar. Med ett golv vid
+`min_duration_s` blev det 36 poäng i stället för 30, med svansen kvar.
+
+Om vi vill sålla bort servefel ska det vara ett uttalat krav på antal
+slag, inte en bieffekt av längdkontrollen.

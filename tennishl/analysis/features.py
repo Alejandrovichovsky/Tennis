@@ -184,7 +184,17 @@ def extract_features(
     near_feet = tracks.near_feet[core]
     v = near_feet[~np.isnan(near_feet)]
     near_half = max(1.0, court.y1 - court.net_y)
-    nearest = float(np.min(np.abs(v - court.net_y)) / near_half) if v.size else 1.0
+    if v.size:
+        # A low percentile, not the minimum. The background model now and
+        # then splits the near player and reports only his torso, whose
+        # "feet" land mid-court; one such frame was enough to label a
+        # baseline rally as net play, which happened to a third of all
+        # points on real footage. Asking how close he got *consistently*
+        # costs nothing and is not hostage to a single bad blob.
+        dist = np.abs(v - court.net_y) / near_half
+        nearest = float(np.percentile(dist, cfg.scoring.net_play_percentile))
+    else:
+        nearest = 1.0
     net_approach = float(np.clip(1.0 - nearest / max(1e-6, cfg.scoring.net_play_depth_frac), 0.0, 1.0))
 
     return RallyFeatures(

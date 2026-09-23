@@ -103,6 +103,10 @@ class SegmentationConfig:
     # far player is a few pixels wide), so with audio present a segment
     # passes if it has *either* this or enough ball hits.
     require_both_sides_frac: float = 0.45
+    # A point is over when the last ball was struck. Without this the
+    # segment runs on while the players jog back, which put clip ends
+    # 2-6 s past the real end (median 1.8 s) on real footage.
+    tail_after_last_hit_s: float = 0.8
     max_camera_motion: float = 0.35        # drop segments where the phone was moved
 
 
@@ -163,6 +167,7 @@ class ScoringConfig:
     winner_finish_score: float = 0.62
     serve_onset_score: float = 0.6
     net_play_depth_frac: float = 0.2       # near player's feet within this fraction of the near half's depth
+    net_play_percentile: float = 10.0      # how close he got consistently, not once
 
 
 @dataclass
