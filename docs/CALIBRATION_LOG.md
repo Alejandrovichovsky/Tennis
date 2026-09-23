@@ -149,21 +149,6 @@ trösklar hjälper - ett svep på `diff_threshold` (14/10/7/5) var rent brus.
 Det kräver en detektor som känner igen bollen på utseende, inte bara på
 rörelse (TrackNet-liknande nät), eller en kamera med kortare slutartid.
 
-### Kvar att verifiera
-
-- Ett komplett facit. Ljud-rallyn är en andra åsikt, inte sanning.
-- Serve-etiketten: `serve_onset` bygger på stillhet före segmentet, men
-  studsarna före serven ger nu aktivitet. Troligen behöver den räknas
-  från första slaget istället.
-- Segmentens slut ligger 2-4 s sena. Kandidat: sluta vid sista slaget +
-  1.5 s när ljud finns.
-- Bollspår vid bortre baslinjen: bollen är ~3 px där, troligen inget spår.
-  Acceptabelt.
-
-## Film 2: GlL6XyTbhLA (TennisCut-promo, 1:25)
-
-Inte en match. Använd för UI-referens, se REFERENCE_VIDEO.md.
-
 ### Körning 6: två mätfel, inga tröskelfel
 
 Båda de kvarvarande punkterna på listan visade sig vara fel i *hur* vi
@@ -193,3 +178,16 @@ slutpunkten och ska inte avgöra om en poäng existerar. Med ett golv vid
 
 Om vi vill sålla bort servefel ska det vara ett uttalat krav på antal
 slag, inte en bieffekt av längdkontrollen.
+
+### Kvar att verifiera
+
+- Ett komplett facit. Ljud-rallyn är en andra åsikt, inte sanning.
+- Serve-etiketten: `serve_onset` bygger på stillhet före segmentet, men
+  studsarna före serven ger nu aktivitet. Troligen behöver den räknas
+  från första slaget istället.
+- Bollspår vid bortre baslinjen: bollen är ~3 px där, troligen inget spår.
+  Acceptabelt.
+
+## Film 2: GlL6XyTbhLA (TennisCut-promo, 1:25)
+
+Inte en match. Använd för UI-referens, se REFERENCE_VIDEO.md.
