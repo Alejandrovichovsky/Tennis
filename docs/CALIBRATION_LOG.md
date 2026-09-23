@@ -238,12 +238,31 @@ som union, inte medelvärde. `a(t) = max(viktat medel, ljudevidens)`.
 Efter: missade ljudserier 6/33 -> 1/33, segment utan ljudstöd 5 -> 3.
 Båda felriktningarna förbättrades samtidigt, alltså ingen avvägning.
 
+### Hela timmen
+
+Grovpasset tog 42 min på 221 509 bildrutor (HEVC 10-bitars avkodar segare
+än H.264). Jämförelsen kördes om från de cachade observationerna på 1,5
+min, vilket är hela poängen med att spara dem.
+
+| | segment | speltid | ljudserier med exakt 1 segment | missade | fragmenterade | slagtakt median |
+|---|---|---|---|---|---|---|
+| viktat medel | 126 | 1704 s (46 %) | 96 av 109 | 12 | 1 | 0,56/s |
+| eller | 180 | 1472 s (40 %) | **109 av 109** | **0** | **0** | **0,76/s** |
+
+Perfekt ett-till-ett mot en oberoende ljuddetektor. Segmenten blev också
+tätare: speltiden sjönk medan slagtakten inom segmenten steg, och antalet
+segment med misstänkt låg takt (under 0,3 slag/s) föll från 17 till 4.
+
+Jag misstänkte först att de 180 segmenten innebar att rallyn styckades,
+men det var fel: fragmenteringen är noll. Skillnaden mot 109 ljudserier är
+47 korta segment med högst två slag. Stickprov på sex av dem visar riktigt
+spel i samtliga - serve plus returmiss, alltså äkta korta växlingar som
+inte når upp till fyra slag och därför inte bildar en "ljudserie".
+
 ### Kvar att titta på
 
 - Lövskuggorna ger `fg` median 0,37 mot ~0,20 i film 1. Percentil-
   normaliseringen fångar upp det, men fg bidrar mest brus här.
-- Tre segment saknar fortfarande ljudstöd. Kan vara korta serier med
-  färre än fyra slag, kan vara falska.
 - Vad "highlight" betyder i en träningssession är en produktfråga: långa
   rallyn är normen snarare än undantaget, så rankingen mäter något annat
   än i en match.
