@@ -191,3 +191,59 @@ slag, inte en bieffekt av längdkontrollen.
 ## Film 2: GlL6XyTbhLA (TennisCut-promo, 1:25)
 
 Inte en match. Använd för UI-referens, se REFERENCE_VIDEO.md.
+
+## Film 3: match2.MOV (61:36, 1080p60 HEVC 10-bit HLG, egen inspelning)
+
+Grus/asfalt, sol lågt i väster, klarblå himmel. Kameran står **lågt och i
+ett hörn**, en trädstam skymmer högerkanten, nedre halvan av bilden är tom
+mark, och fladdrande lövskuggor rör sig över hela underlaget. Två spelare.
+
+Viktigast för tolkningen: **det här är bollträning, inte en match.** De
+slår långa sammanhängande serier utan poäng. Segment på 22-44 s är alltså
+korrekta, och 54 % speltid är rimligt (mot 37 % i film 1).
+
+### Vad 60 fps avslöjade
+
+Tre grindar räknas i bildrutor och var inställda vid 30 fps:
+`max_speed_px_per_frame` (bollen rör sig halva sträckan mellan rutor vid
+60 fps, så grinden var dubbelt för lös), samt `max_gap_frames`,
+`min_track_points` och `full_length_points` (som alla täckte halva den tid
+de var avsedda för). De skalas nu mot `reference_fps` precis som
+px-värdena skalas mot `reference_width`.
+
+HDR-avkodningen (HLG, bt2020, 10-bitars) ger normala ljusnivåer i OpenCV
+och ställde inte till något. Himlen är dock utbränd till 255, vilket är
+den bakgrund bollen är svårast mot.
+
+### Ljudet fick inte bära ensamt
+
+Sex av 33 ljudserier (>=4 slag, <2,5 s isär) saknade helt motsvarande
+videosegment. Mätt i de fönstren:
+
+| fönster | a(t) | fg | hastighet | båda sidor | ljud |
+|---|---|---|---|---|---|
+| missad 44-49 | 0,33 | 0,09 | 0,18 | 0,20 | 0,70 |
+| missad 54-58 | 0,43 | 0,05 | 0,39 | 0,12 | 1,00 |
+| missad 284-292 | 0,26 | 0,01 | 0,00 | 0,00 | 0,65 |
+| hittad 71-114 | 0,60 | 0,64 | 0,36 | 0,84 | 0,69 |
+
+Spelarna var långt från kameran och syntes knappt som förgrund, medan
+slagen hördes perfekt. Felet är strukturellt, inte en tröskel: med vikten
+0,30 i ett viktat medelvärde kan ljudet ensamt nå högst 0,30, under
+starttröskeln 0,52. En tyst kanal kunde alltså veta en säker.
+
+Kanalerna är oberoende detektorer av samma händelse, så de ska kombineras
+som union, inte medelvärde. `a(t) = max(viktat medel, ljudevidens)`.
+
+Efter: missade ljudserier 6/33 -> 1/33, segment utan ljudstöd 5 -> 3.
+Båda felriktningarna förbättrades samtidigt, alltså ingen avvägning.
+
+### Kvar att titta på
+
+- Lövskuggorna ger `fg` median 0,37 mot ~0,20 i film 1. Percentil-
+  normaliseringen fångar upp det, men fg bidrar mest brus här.
+- Tre segment saknar fortfarande ljudstöd. Kan vara korta serier med
+  färre än fyra slag, kan vara falska.
+- Vad "highlight" betyder i en träningssession är en produktfråga: långa
+  rallyn är normen snarare än undantaget, så rankingen mäter något annat
+  än i en match.
